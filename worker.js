@@ -134,12 +134,12 @@ export default {
 					if (!email)
 						return new Response("Unauthorized", { status: 401 });
 
-					const { swimmer_name, meet_id, event, type, start, time } =
+					const { swimmer_id, meet_id, event, type, start, time } =
 						await request.json();
 
 					if (
-						!swimmer_name ||
 						!Number.isInteger(meet_id) ||
+						!Number.isInteger(swimmer_id) ||
 						!ALLOWED_EVENTS.includes(event) ||
 						!["individual", "relay"].includes(type) ||
 						!["flat", "relay"].includes(start) ||
@@ -154,11 +154,11 @@ export default {
 					await env.DB.prepare(
 						`
 						INSERT INTO records
-						(swimmer_name, meet_id, event, type, time, start)
+						(swimmer_id, meet_id, event, type, time, start)
 						VALUES (?, ?, ?, ?, ?, ?)
 						`
 					)
-						.bind(swimmer_name, meet_id, event, type, time, start)
+						.bind(swimmer_id, meet_id, event, type, time, start)
 						.run();
 
 					return new Response("Record added", { status: 201 });
@@ -170,7 +170,7 @@ export default {
 					if (!email)
 						return new Response("Unauthorized", { status: 401 });
 
-					const { swimmer_name, graduating_year} = await request.json();
+					const { name, graduating_year} = await request.json();
 
 					if (
 						!Number.isInteger(graduating_year)
@@ -183,11 +183,11 @@ export default {
 					await env.DB.prepare(
 						`
 						INSERT INTO swimmers
-						(swimmer_name, graduating_year)
+						(name, graduating_year)
 						VALUES (?, ?)
 						`
 					)
-						.bind(swimmer_name, graduating_year)
+						.bind(name, graduating_year)
 						.run();
 
 					return new Response("Record added", { status: 201 });
