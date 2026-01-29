@@ -4,5 +4,13 @@
 	"main": "./worker.js",
 	"vars": {
 		"GOOGLE_CLIENT_ID": "288071272538-a99420s0nv2r2q7p30l1vapcrocamgo1.apps.googleusercontent.com"
-	}
+	},
+
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "swimming-records",
+			"database_id": "c1b73df4-9faa-47be-8ebf-1e0e0024f86e"
+		}
+	]
 }
