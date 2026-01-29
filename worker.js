@@ -169,7 +169,6 @@ export default {
 					const email = await verifyAuth();
 					if (!email)
 						return new Response("Unauthorized", { status: 401 });
-
 					const { name, graduating_year} = await request.json();
 
 					if (
@@ -212,7 +211,7 @@ export default {
 				console.error("Unhandled error:", err);
 
 				return new Response(
-					JSON.stringify({ error: "Internal Server Error" }),
+					JSON.stringify({ error: "Internal Server Error: " + err.message }),
 					{
 						status: 500,
 						headers: { "Content-Type": "application/json" }
