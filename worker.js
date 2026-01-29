@@ -53,16 +53,19 @@ export default {
 						`
 						SELECT
 						r.id,
-						r.swimmer_name,
+						r.swimmer_id,
 						r.event,
 						r.type,
 						r.time,
 						r.start,
 						m.name AS meet_name,
 						m.location AS meet_location,
-						m.date AS meet_date
+						m.date AS meet_date,
+						s.name AS swimmer_name,
+						s.graduating_year AS swimmer_year
 						FROM records r
 						JOIN meets m ON r.meet_id = m.id
+						JOIN swimmers s ON r.swimmer_id = s.id
 						ORDER BY m.date DESC, r.time ASC
 						`
 					).all();
@@ -85,6 +88,7 @@ export default {
 						headers: { "Content-Type": "application/json" }
 					});
 				}
+
 
 				if (request.method === "POST" && url.pathname === "/meets") {
 					const email = await verifyAuth();
@@ -145,6 +149,36 @@ export default {
 
 					return new Response("Record added", { status: 201 });
 				}
+
+
+				if (request.method === "POST" && url.pathname === "/swimmers") {
+					const email = await verifyAuth();
+					if (!email)
+						return new Response("Unauthorized", { status: 401 });
+
+					const { swimmer_name, graduating_year} = await request.json();
+
+					if (
+						!Number.isInteger(graduating_year)
+					) {
+						return new Response("Invalid record data", {
+							status: 400
+						});
+					}
+
+					await env.DB.prepare(
+						`
+						INSERT INTO swimmers
+						(swimmer_name, graduating_year)
+						VALUES (?, ?)
+						`
+					)
+						.bind(swimmer_name, graduating_year)
+						.run();
+
+					return new Response("Record added", { status: 201 });
+				}
+
 
 				if (request.method === "POST" && url.pathname === "/verify") {
 					const email = await verifyAuth();
