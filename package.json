@@ -1,18 +1,24 @@
 {
-  "name": "swimming-api",
-  "private": true,
-  "version": "0.1.0",
-  "type": "module",
-  "scripts": {
-    "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
-    "preview": "wrangler preview",
-    "lint": "eslint .",
-    "format": "prettier --write ."
-  },
-  "devDependencies": {
-    "wrangler": "^3.30.0",
-    "typescript": "^5.4.0",
-    "@cloudflare/workers-types": "^4.20240101"
-  }
+	"name": "swimming-api",
+	"private": true,
+	"version": "0.1.0",
+	"type": "module",
+	"scripts": {
+		"dev": "wrangler dev",
+		"deploy": "wrangler deploy",
+		"preview": "wrangler preview",
+		"lint": "eslint .",
+		"format": "prettier --write ."
+	},
+	"devDependencies": {
+		"@cloudflare/workers-types": "^4.20240101",
+		"typescript": "^5.4.0",
+		"wrangler": "^3.30.0"
+	},
+	"dependencies": {
+		"@eslint/js": "^9.39.2",
+		"eslint-plugin-react-hooks": "^7.0.1",
+		"eslint-plugin-react-refresh": "^0.4.26",
+		"globals": "^17.2.0"
+	}
 }
