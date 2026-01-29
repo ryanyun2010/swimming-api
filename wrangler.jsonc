@@ -1,5 +1,5 @@
 {
-  "name": "worker-name",
+  "name": "swimming-api",
   "compatibility_date": "2026-01-29",
   "main": "./worker.js"
 }
