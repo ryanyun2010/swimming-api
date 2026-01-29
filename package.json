@@ -1,0 +1,19 @@
+{
+  "name": "swimming.api",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "preview": "wrangler preview",
+    "test": "vitest",
+    "lint": "eslint .",
+    "format": "prettier --write ."
+  },
+  "devDependencies": {
+    "wrangler": "^3.30.0",
+    "typescript": "^5.4.0",
+    "@cloudflare/workers-types": "^4.20240101",
+  }
+}
