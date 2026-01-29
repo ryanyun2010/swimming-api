@@ -223,6 +223,6 @@ export default {
 			return response;
 		};
 
-		return withCors(responder(request, env));
+		return withCors(await responder(request, env));
 	}
 };
