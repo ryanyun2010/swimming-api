@@ -89,6 +89,20 @@ export default {
 					});
 				}
 
+				if (request.method === "GET" && url.pathname === "/swimmers") {
+					const res = await env.DB.prepare(
+						`
+						SELECT name
+						FROM swimmers
+						ORDER BY id ASC
+						`
+					).all();
+
+					return new Response(JSON.stringify(res.results), {
+						headers: { "Content-Type": "application/json" }
+					});
+				}
+
 
 				if (request.method === "POST" && url.pathname === "/meets") {
 					const email = await verifyAuth();
