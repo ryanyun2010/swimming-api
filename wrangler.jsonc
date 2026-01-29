@@ -1,5 +1,8 @@
 {
   "name": "swimming-api",
   "compatibility_date": "2026-01-29",
-  "main": "./worker.js"
+  "main": "./worker.js",
+  "vars": {
+      "GOOGLE_CLIENT_ID":"288071272538-a99420s0nv2r2q7p30l1vapcrocamgo1.apps.googleusercontent.com"
+  }
 }
