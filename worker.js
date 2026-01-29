@@ -25,24 +25,29 @@ export default {
 
     /* ---------- AUTH ---------- */
     async function verifyAuth() {
-      const authHeader = request.headers.get("Authorization");
-      if (!authHeader?.startsWith("Bearer ")) return null;
-
-      const token = authHeader.split(" ")[1];
-      const googleRes = await fetch(
-        `https://oauth2.googleapis.com/tokeninfo?id_token=${token}`
-      );
-      if (!googleRes.ok) return null;
-
-      const payload = await googleRes.json();
-
-      if (payload.aud !== env.GOOGLE_CLIENT_ID) return null;
-      if (payload.email_verified !== "true") return null;
-
-      const allowedEmails = ["ryanyun2010@gmail.com"];
-      if (!allowedEmails.includes(payload.email)) return null;
-
-      return payload.email;
+      try {
+        const authHeader = request.headers.get("Authorization");
+        if (!authHeader?.startsWith("Bearer ")) return null;
+    
+        const token = authHeader.split(" ")[1];
+        const googleRes = await fetch(
+          `https://oauth2.googleapis.com/tokeninfo?id_token=${token}`
+        );
+        if (!googleRes.ok) return null;
+    
+        const payload = await googleRes.json();
+    
+        if (payload.aud !== env.GOOGLE_CLIENT_ID) return null;
+        if (payload.email_verified !== "true") return null;
+    
+        const allowedEmails = ["ryanyun2010@gmail.com"];
+        if (!allowedEmails.includes(payload.email)) return null;
+    
+        return payload.email;
+      } catch (err) {
+        console.error("Auth error:", err);
+        return null;
+      }
     }
 
     /* ---------- CONSTANTS ---------- */
