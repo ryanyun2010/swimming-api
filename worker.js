@@ -103,7 +103,6 @@ export default {
 					});
 				}
 
-
 				if (request.method === "POST" && url.pathname === "/meets") {
 					const email = await verifyAuth();
 					if (!email)
@@ -134,11 +133,11 @@ export default {
 					if (!email)
 						return new Response("Unauthorized", { status: 401 });
 
-					const records =
-						await request.json();
-					
+					const records = await request.json();
+
 					for (let record of records) {
-						let { meet_id, swimmer_id, event, type, time, start } = record;
+						let { meet_id, swimmer_id, event, type, time, start } =
+							record;
 						if (
 							!Number.isInteger(meet_id) ||
 							!Number.isInteger(swimmer_id) ||
@@ -167,16 +166,13 @@ export default {
 					return new Response("Record added", { status: 201 });
 				}
 
-
 				if (request.method === "POST" && url.pathname === "/swimmers") {
 					const email = await verifyAuth();
 					if (!email)
 						return new Response("Unauthorized", { status: 401 });
-					const { name, graduating_year} = await request.json();
+					const { name, graduating_year } = await request.json();
 
-					if (
-						!Number.isInteger(graduating_year)
-					) {
+					if (!Number.isInteger(graduating_year)) {
 						return new Response("Invalid record data", {
 							status: 400
 						});
@@ -195,7 +191,6 @@ export default {
 					return new Response("Record added", { status: 201 });
 				}
 
-
 				if (request.method === "POST" && url.pathname === "/verify") {
 					const email = await verifyAuth();
 					if (!email)
@@ -209,12 +204,65 @@ export default {
 					);
 				}
 
+				if (request.method === "POST" && url.pathname === "/relays") {
+					const email = await verifyAuth();
+					if (!email)
+						return new Response("Unauthorized", { status: 401 });
+
+					const {
+						time,
+						relay_type,
+						record_1_id,
+						record_2_id,
+						record_3_id,
+						record_4_id
+					} = await request.json();
+					if (
+						typeof time !== "number" ||
+						time <= 0 ||
+						!(
+							relay_type == "200_mr" ||
+							relay_type == "200_fr" ||
+							relay_type == "400_fr"
+						) ||
+						!Number.isInteger(record_1_id) ||
+						!Number.isInteger(record_2_id) ||
+						!Number.isInteger(record_3_id) ||
+						!Number.isInteger(record_4_id)
+					) {
+						return new Response("Invalid record data", {
+							status: 400
+						});
+					}
+
+					await env.DB.prepare(
+						`
+						INSERT INTO relays
+						(time, type, record_1_id, record_2_id, record_3_id, record_4_id)
+						VALUES (?, ?, ?, ?, ?, ?)
+						`
+					)
+						.bind(
+							time,
+							relay_type,
+							record_1_id,
+							record_2_id,
+							record_3_id,
+							record_4_id
+						)
+						.run();
+
+					return new Response("Relay added", { status: 201 });
+				}
+
 				return new Response("Not Found", { status: 404 });
 			} catch (err) {
 				console.error("Unhandled error:", err);
 
 				return new Response(
-					JSON.stringify({ error: "Internal Server Error: " + err.message }),
+					JSON.stringify({
+						error: "Internal Server Error: " + err.message
+					}),
 					{
 						status: 500,
 						headers: { "Content-Type": "application/json" }
