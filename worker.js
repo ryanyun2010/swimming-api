@@ -134,32 +134,35 @@ export default {
 					if (!email)
 						return new Response("Unauthorized", { status: 401 });
 
-					const { swimmer_id, meet_id, event, type, start, time } =
+					const records =
 						await request.json();
+					
+					for (let record of records) {
+						let { meet_id, swimmer_id, event, type, time, start } = record;
+						if (
+							!Number.isInteger(meet_id) ||
+							!Number.isInteger(swimmer_id) ||
+							!ALLOWED_EVENTS.includes(event) ||
+							!["individual", "relay"].includes(type) ||
+							!["flat", "relay"].includes(start) ||
+							typeof time !== "number" ||
+							time <= 0
+						) {
+							return new Response("Invalid record data", {
+								status: 400
+							});
+						}
 
-					if (
-						!Number.isInteger(meet_id) ||
-						!Number.isInteger(swimmer_id) ||
-						!ALLOWED_EVENTS.includes(event) ||
-						!["individual", "relay"].includes(type) ||
-						!["flat", "relay"].includes(start) ||
-						typeof time !== "number" ||
-						time <= 0
-					) {
-						return new Response("Invalid record data", {
-							status: 400
-						});
+						await env.DB.prepare(
+							`
+							INSERT INTO records
+							(swimmer_id, meet_id, event, type, time, start)
+							VALUES (?, ?, ?, ?, ?, ?)
+							`
+						)
+							.bind(swimmer_id, meet_id, event, type, time, start)
+							.run();
 					}
-
-					await env.DB.prepare(
-						`
-						INSERT INTO records
-						(swimmer_id, meet_id, event, type, time, start)
-						VALUES (?, ?, ?, ?, ?, ?)
-						`
-					)
-						.bind(swimmer_id, meet_id, event, type, time, start)
-						.run();
 
 					return new Response("Record added", { status: 201 });
 				}
