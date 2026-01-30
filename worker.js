@@ -85,6 +85,7 @@ export default {
 					).all();
 
 					return new Response(JSON.stringify(res.results), {
+						status: 200,
 						headers: { "Content-Type": "application/json" }
 					});
 				}
@@ -99,6 +100,7 @@ export default {
 					).all();
 
 					return new Response(JSON.stringify(res.results), {
+						status: 200,
 						headers: { "Content-Type": "application/json" }
 					});
 				}
@@ -113,6 +115,7 @@ export default {
 					).all();
 
 					return new Response(JSON.stringify(res.results), {
+						status: 200,
 						headers: { "Content-Type": "application/json" }
 					});
 				}
@@ -159,12 +162,12 @@ export default {
 							record;
 
 						let message = null;
-						if (!Number.isInteger(meet_id)) { message = " meet_id must be an integer."; }
-						if (!Number.isInteger(swimmer_id)) { message = " swimmer_id must be an integer."; }
-						if (!ALLOWED_EVENTS.includes(event)) { message = " event is invalid."; }
-						if (!["individual", "relay"].includes(type)) { message = " type is invalid."; }
-						if (!["flat", "relay"].includes(start)) { message = " start is invalid."; }
-						if (typeof time !== "number" || time <= 0) { message = " time must be a positive number."; }
+						if (!Number.isInteger(meet_id)) { message = ` meet_id ${meet_id} must be an integer.`; }
+						if (!Number.isInteger(swimmer_id)) { message = ` swimmer_id ${swimmer_id} must be an integer.`; }
+						if (!ALLOWED_EVENTS.includes(event)) { message = ` event ${event} is invalid.`; }
+						if (!["individual", "relay"].includes(type)) { message = ` type ${type} is invalid.`; }
+						if (!["flat", "relay"].includes(start)) { message = ` start ${start} is invalid.`; }
+						if (typeof time !== "number" || time <= 0) { message = ` time ${time} must be a positive number.`; }
 						if (message != null) {
 							return new Response("Invalid record data:" + message, {
 								status: 400
