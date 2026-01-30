@@ -95,7 +95,7 @@ export default {
 						SELECT id, name, location, date
 						FROM meets
 						ORDER BY date DESC
-						FETCH FIRST 5 ROWS ONLY
+						LIMIT 5
 						`
 					).all();
 
