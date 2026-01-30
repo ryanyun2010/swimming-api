@@ -85,6 +85,40 @@ export default {
 					).all();
 
 					return new Response(JSON.stringify(res.results), {
+						status: 200,
+						headers: { "Content-Type": "application/json" }
+					});
+				}
+				if (
+					request.method === "GET" &&
+					url.pathname === "/recent_meets"
+				) {
+					const res = await env.DB.prepare(
+						`
+						SELECT id, name, location, date
+						FROM meets
+						ORDER BY date DESC
+						LIMIT 5
+						`
+					).all();
+
+					return new Response(JSON.stringify(res.results), {
+						status: 200,
+						headers: { "Content-Type": "application/json" }
+					});
+				}
+
+				if (request.method === "GET" && url.pathname === "/records") {
+					const res = await env.DB.prepare(
+						`
+						SELECT	*			
+						FROM records
+						ORDER BY id DESC
+						`
+					).all();
+
+					return new Response(JSON.stringify(res.results), {
+						status: 200,
 						headers: { "Content-Type": "application/json" }
 					});
 				}
@@ -99,6 +133,7 @@ export default {
 					).all();
 
 					return new Response(JSON.stringify(res.results), {
+						status: 200,
 						headers: { "Content-Type": "application/json" }
 					});
 				}
@@ -111,15 +146,20 @@ export default {
 					const { name, location, date } = await request.json();
 
 					let message = null;
-					if (!name) {message = "Name is required."; }
-					if (!location) { message = " Location is required."; }
-					if (!Number.isInteger(date)) { message = " Date must be an integer."; }
+					if (!name) {
+						message = "Name is required.";
+					}
+					if (!location) {
+						message = " Location is required.";
+					}
+					if (!Number.isInteger(date)) {
+						message = " Date must be an integer.";
+					}
 					if (message != null) {
 						return new Response("Invalid meet data: " + message, {
 							status: 400
 						});
 					}
-
 
 					await env.DB.prepare(
 						`
@@ -145,16 +185,31 @@ export default {
 							record;
 
 						let message = null;
-						if (!Number.isInteger(meet_id)) { message = " meet_id must be an integer."; }
-						if (!Number.isInteger(swimmer_id)) { message = " swimmer_id must be an integer."; }
-						if (!ALLOWED_EVENTS.includes(event)) { message = " event is invalid."; }
-						if (!["individual", "relay"].includes(type)) { message = " type is invalid."; }
-						if (!["flat", "relay"].includes(start)) { message = " start is invalid."; }
-						if (typeof time !== "number" || time <= 0) { message = " time must be a positive number."; }
+						if (!Number.isInteger(meet_id)) {
+							message = ` meet_id ${meet_id} must be an integer.`;
+						}
+						if (!Number.isInteger(swimmer_id)) {
+							message = ` swimmer_id ${swimmer_id} must be an integer.`;
+						}
+						if (!ALLOWED_EVENTS.includes(event)) {
+							message = ` event ${event} is invalid.`;
+						}
+						if (!["individual", "relay"].includes(type)) {
+							message = ` type ${type} is invalid.`;
+						}
+						if (!["flat", "relay"].includes(start)) {
+							message = ` start ${start} is invalid.`;
+						}
+						if (typeof time !== "number" || time <= 0) {
+							message = ` time ${time} must be a positive number.`;
+						}
 						if (message != null) {
-							return new Response("Invalid record data:" + message, {
-								status: 400
-							});
+							return new Response(
+								"Invalid record data:" + message,
+								{
+									status: 400
+								}
+							);
 						}
 
 						await env.DB.prepare(
@@ -178,9 +233,12 @@ export default {
 					const { name, graduating_year } = await request.json();
 
 					if (!Number.isInteger(graduating_year)) {
-						return new Response("Invalid record data: graduating_year must be a number", {
-							status: 400
-						});
+						return new Response(
+							"Invalid record data: graduating_year must be a number",
+							{
+								status: 400
+							}
+						);
 					}
 
 					await env.DB.prepare(
@@ -223,25 +281,38 @@ export default {
 						record_4_id
 					} = await request.json();
 					let message = null;
-					if (typeof time !== "number") { message = " time must be a number."; }
-					if (time <= 0) { message = " time must be positive."; }
+					if (typeof time !== "number") {
+						message = " time must be a number.";
+					}
+					if (time <= 0) {
+						message = " time must be positive.";
+					}
 					if (
 						!(
 							relay_type == "200_mr" ||
 							relay_type == "200_fr" ||
 							relay_type == "400_fr"
 						)
-					) { message = " relay_type is invalid."; }
-					if (!Number.isInteger(record_1_id)) { message = " record_1_id must be an integer."; }
-					if (!Number.isInteger(record_2_id)) { message = " record_2_id must be an integer."; }
-					if (!Number.isInteger(record_3_id)) { message = " record_3_id must be an integer."; }
-					if (!Number.isInteger(record_4_id)) { message = " record_4_id must be an integer."; }
+					) {
+						message = " relay_type is invalid.";
+					}
+					if (!Number.isInteger(record_1_id)) {
+						message = " record_1_id must be an integer.";
+					}
+					if (!Number.isInteger(record_2_id)) {
+						message = " record_2_id must be an integer.";
+					}
+					if (!Number.isInteger(record_3_id)) {
+						message = " record_3_id must be an integer.";
+					}
+					if (!Number.isInteger(record_4_id)) {
+						message = " record_4_id must be an integer.";
+					}
 					if (message != null) {
 						return new Response("Invalid relay data:" + message, {
 							status: 400
 						});
 					}
-
 
 					await env.DB.prepare(
 						`
