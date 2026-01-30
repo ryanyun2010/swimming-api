@@ -89,6 +89,21 @@ export default {
 						headers: { "Content-Type": "application/json" }
 					});
 				}
+				if (request.method === "GET" && url.pathname === "/recent_meets") {
+					const res = await env.DB.prepare(
+						`
+						SELECT id, name, location, date
+						FROM meets
+						ORDER BY date DESC
+						FETCH FIRST 5 ROWS ONLY
+						`
+					).all();
+
+					return new Response(JSON.stringify(res.results), {
+						status: 200,
+						headers: { "Content-Type": "application/json" }
+					});
+				}
 
 				if (request.method === "GET" && url.pathname === "/records") {
 					const res = await env.DB.prepare(
