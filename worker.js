@@ -92,7 +92,7 @@ export default {
 				if (request.method === "GET" && url.pathname === "/swimmers") {
 					const res = await env.DB.prepare(
 						`
-						SELECT name
+						SELECT name, graduating_year
 						FROM swimmers
 						ORDER BY id ASC
 						`
