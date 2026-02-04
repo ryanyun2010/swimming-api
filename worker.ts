@@ -4,21 +4,23 @@ import { z, ZodError } from "zod";
 import * as Errors from "./errors";
 import {ErrorRes} from "./errors";
 
+
+/**** EXPECTED DATA STRUCTURES ****/ 
 interface env {
 	DB: D1Database;
 	GOOGLE_CLIENT_ID: string;
 }
 
 const googleTokenSchema = z.object({
-  iss: z.string(),
-  aud: z.string(),
-  sub: z.string(),
-  email: z.string().email().optional(),
-  email_verified: z.enum(["true", "false"]).optional(),
-  name: z.string().optional(),
-  picture: z.string().url().optional(),
-  iat: z.coerce.number(),
-  exp: z.coerce.number(),
+	iss: z.string(),
+	aud: z.string(),
+	sub: z.string(),
+	email: z.string().email().optional(),
+	email_verified: z.enum(["true", "false"]).optional(),
+	name: z.string().optional(),
+	picture: z.string().url().optional(),
+	iat: z.coerce.number(),
+	exp: z.coerce.number(),
 });
 
 const allowedEvents = [
@@ -36,46 +38,48 @@ const allowedEvents = [
 ];
 
 const meetSchema = z.object({
-  name: z.string().min(1, "Name is required"),
-  location: z.string().min(1, "Location is required"),
-  date: z.number().int("Date must be an integer"),
+	name: z.string().min(1, "Name is required"),
+	location: z.string().min(1, "Location is required"),
+	date: z.number().int("Date must be an integer"),
 });
 
 const recordSchema = z.array(
-  z.object({
-    meet_id: z.number().int(),
-    swimmer_id: z.number().int(),
-    event: z.enum(allowedEvents),
-    type: z.enum(["individual", "relay"]),
-    start: z.enum(["flat", "relay"]),
-    time: z.number().positive(),
-  })
+	z.object({
+		meet_id: z.number().int(),
+		swimmer_id: z.number().int(),
+		event: z.enum(allowedEvents),
+		type: z.enum(["individual", "relay"]),
+		start: z.enum(["flat", "relay"]),
+		time: z.number().positive(),
+	})
 );
 
 const swimmerSchema = z.object({
-  name: z.string().min(1, "Name is required"),
-  graduating_year: z.number().int(),
+	name: z.string().min(1, "Name is required"),
+	graduating_year: z.number().int(),
 });
 
 const relaySchema = z.object({
-  time: z.number().positive(),
-  relay_type: z.enum(["200_mr", "200_fr", "400_fr"]),
-  record_1_id: z.number().int(),
-  record_2_id: z.number().int(),
-  record_3_id: z.number().int(),
-  record_4_id: z.number().int(),
+	time: z.number().positive(),
+	relay_type: z.enum(["200_mr", "200_fr", "400_fr"]),
+	record_1_id: z.number().int(),
+	record_2_id: z.number().int(),
+	record_3_id: z.number().int(),
+	record_4_id: z.number().int(),
 });
 
 
-
-function zodErrorToHumanReadable(err: ZodError) {
-  return err.issues
-    .map(i => `${i.path.join(".")}: ${i.message}`)
-    .join("; ");
+/**** VARIOUS UTILITIES ****/ 
+function zodErrorToHumanReadable(err: ZodError): string {
+	return err.issues
+		.map(i => `${i.path.join(".")}: ${i.message}`)
+		.join("; ");
 }
 
-function zodParseWith<T>(schema: z.ZodSchema<T>, errFunc: (errMsg: string) => ErrorRes
-						): (json: unknown) => ResultAsync<T, ErrorRes> {
+function zodParseWith<T>(
+	schema: z.ZodSchema<T>, 
+	errFunc: (errMsg: string) => ErrorRes
+): (json: unknown) => ResultAsync<T, ErrorRes> {
 	return (json: unknown) => {
 		const parseResult = schema.safeParse(json);
 		if (!parseResult.success) {
@@ -85,11 +89,12 @@ function zodParseWith<T>(schema: z.ZodSchema<T>, errFunc: (errMsg: string) => Er
 	};
 }
 
-function queryDB(db: D1Database, query: string, 
-				 errFunc: (errMsg: string) => ErrorRes = (e: string) => new Errors.InternalDatabase(`Failed to query database: ${e}`),
-			     binds: any[] = []
-				 ): ResultAsync<any, ErrorRes> {
-
+function queryDB(
+	db: D1Database,
+	query: string, 
+	errFunc: (errMsg: string) => ErrorRes = (e: string) => new Errors.InternalDatabase(`Failed to query database: ${e}`),
+	binds: any[] = []
+): ResultAsync<any, ErrorRes> {
 	return ResultAsync.fromPromise(
 		db.prepare(query).bind(...binds).all(),
 		(e) => errFunc(JSON.stringify(e))
@@ -103,24 +108,27 @@ function returnJSONResponse(data: any, status: number = 200): Response {
 	});
 }
 
-function getRequestJSON(request: Request, 
-						errFunc: (errMsg: string) => ErrorRes = (e: string) => new Errors.MalformedRequest(`Failed to parse request JSON: ${e}`)
-					    ): ResultAsync<any, ErrorRes> {
+function getRequestJSON(
+	request: Request, 
+	errFunc: (errMsg: string) => ErrorRes = (e: string) => new Errors.MalformedRequest(`Failed to parse request JSON: ${e}`)
+): ResultAsync<any, ErrorRes> {
 	return ResultAsync.fromPromise(
 		request.json(),
 		(e) => errFunc(JSON.stringify(e))
 	);
 }
 
-function getAndParseRequestJSON<T>(request: Request, schema: z.ZodSchema<T>, 
-								   zodParseFailErrFunc: (errMsg: string) => ErrorRes, 
-								   requestJSONFailErrFunc: (errMsg: string) => ErrorRes = (e: string) => new Errors.MalformedRequest(`Failed to parse request JSON: ${e}`)
-								   ): ResultAsync<T, ErrorRes> {
+function getAndParseRequestJSON<T>(
+	request: Request, 
+	schema: z.ZodSchema<T>, 
+	zodParseFailErrFunc: (errMsg: string) => ErrorRes, 
+	requestJSONFailErrFunc: (errMsg: string) => ErrorRes = (e: string) => new Errors.MalformedRequest(`Failed to parse request JSON: ${e}`)
+): ResultAsync<T, ErrorRes> {
 	return getRequestJSON(request, requestJSONFailErrFunc).andThen(zodParseWith(schema, zodParseFailErrFunc));
 }
 
 
-
+/**** MAIN ROUTING ****/
 const routes: Record<string, (request: Request, env: env) => ResultAsync<Response, ErrorRes>> = {
 
 	"GET /": (_request, env) => queryDB(env.DB,`
