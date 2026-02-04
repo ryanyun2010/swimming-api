@@ -35,28 +35,29 @@ const allowedEvents = [
 	"200_free",
 	"200_im",
 	"500_free"
-];
+] as const;
 
 const meetSchema = z.object({
 	name: z.string().min(1, "Name is required"),
 	location: z.string().min(1, "Location is required"),
-	date: z.number().int("Date must be an integer"),
+	date: z.number().int("Date must be an integer")
 });
 
-const recordSchema = z.array(
-	z.object({
+
+const recordSchema = z.object({
 		meet_id: z.number().int(),
 		swimmer_id: z.number().int(),
 		event: z.enum(allowedEvents),
 		type: z.enum(["individual", "relay"]),
 		start: z.enum(["flat", "relay"]),
-		time: z.number().positive(),
-	})
-);
+		time: z.number().positive()
+	});
+
+const recordsSchema = z.array(recordSchema);
 
 const swimmerSchema = z.object({
 	name: z.string().min(1, "Name is required"),
-	graduating_year: z.number().int(),
+	graduating_year: z.number().int()
 });
 
 const relaySchema = z.object({
@@ -65,7 +66,7 @@ const relaySchema = z.object({
 	record_1_id: z.number().int(),
 	record_2_id: z.number().int(),
 	record_3_id: z.number().int(),
-	record_4_id: z.number().int(),
+	record_4_id: z.number().int()
 });
 
 
@@ -179,7 +180,7 @@ const routes: Record<string, (request: Request, env: env) => ResultAsync<Respons
 
 	
 	"POST /records": (request, env) => verifyAuth(request, env)
-		.andThen(() => getAndParseRequestJSON(request, recordSchema, (errMsg) => new Errors.MalformedRequest("Given invalid record data: " + errMsg)))
+		.andThen(() => getAndParseRequestJSON(request, recordsSchema, (errMsg) => new Errors.MalformedRequest("Given invalid record data: " + errMsg)))
 		.andThen(
 			(json) => {
 				const placeholders = json.map(() => "(?, ?, ?, ?, ?, ?)").join(", ");
