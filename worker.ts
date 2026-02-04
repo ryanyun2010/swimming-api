@@ -15,13 +15,14 @@ const googleTokenSchema = z.object({
 	iss: z.string(),
 	aud: z.string(),
 	sub: z.string(),
-	email: z.string().email().optional(),
+	email: z.email().optional(),
 	email_verified: z.enum(["true", "false"]).optional(),
 	name: z.string().optional(),
-	picture: z.string().url().optional(),
+	picture: z.url().optional(),
 	iat: z.coerce.number(),
 	exp: z.coerce.number(),
 });
+
 
 const allowedEvents = [
 	"50_free",
@@ -230,11 +231,15 @@ const routes: Record<string, (request: Request, env: env) => ResultAsync<Respons
 				LIMIT 5 `
 			).map((res) => returnJSONResponse(res)),
 
+
+
 	"POST /verify": (request, env) => verifyAuth(request, env).map((email) =>
 			new Response(
 				JSON.stringify({ allowed: true, email }), { headers: { "Content-Type": "application/json" } }
 			)
 		),
+
+
 
 	"POST /relays": (request, env) => verifyAuth(request, env).andThen(() => getAndParseRequestJSON(request, relaySchema, (errMsg) => new Errors.MalformedRequest("Given invalid relay data: " + errMsg)))
 		.andThen(
