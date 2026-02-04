@@ -74,7 +74,8 @@ function zodErrorToHumanReadable(err: ZodError) {
     .join("; ");
 }
 
-function zodParseWith<T>(schema: z.ZodSchema<T>, errFunc: (errMsg: string) => ErrorRes): (json: unknown) => ResultAsync<T, ErrorRes> {
+function zodParseWith<T>(schema: z.ZodSchema<T>, errFunc: (errMsg: string) => ErrorRes
+						): (json: unknown) => ResultAsync<T, ErrorRes> {
 	return (json: unknown) => {
 		const parseResult = schema.safeParse(json);
 		if (!parseResult.success) {
@@ -84,46 +85,46 @@ function zodParseWith<T>(schema: z.ZodSchema<T>, errFunc: (errMsg: string) => Er
 	};
 }
 
-function handler (request: Request, env: env): ResultAsync<Response, ErrorRes> {
-	let url;
-	try {
-		url = new URL(request.url);
-	} catch (e) {
-		return errAsync(new Errors.MalformedRequest(`Invalid URL: ${e}`));
-	}
+function queryDB(db: D1Database, query: string, 
+				 errFunc: (errMsg: string) => ErrorRes = (e: string) => new Errors.InternalDatabase(`Failed to query database: ${e}`),
+			     binds: any[] = []
+				 ): ResultAsync<any, ErrorRes> {
 
-	if (request.method === "OPTIONS") {
-		return okAsync(new Response(null, { status: 204 }));
-	}
+	return ResultAsync.fromPromise(
+		db.prepare(query).bind(...binds).all(),
+		(e) => errFunc(JSON.stringify(e))
+	);
+}
 
-	function verifyAuth(): ResultAsync<string, ErrorRes>{
-		const authHeader = request.headers.get("Authorization");
-		if (!authHeader?.startsWith("Bearer ")) return errAsync(new Errors.Unauthorized("No Authorization header"));
-		const token = authHeader.split(" ")[1];
+function returnJSONResponse(data: any, status: number = 200): Response {
+	return new Response(JSON.stringify(data), {
+		status: status,
+		headers: { "Content-Type": "application/json" }
+	});
+}
 
-		const allowedEmails = ["ryanyun2010@gmail.com"];
-		return ResultAsync.fromPromise(fetch(
-			`https://oauth2.googleapis.com/tokeninfo?id_token=${token}`
-		), (e) => new Errors.NoResponse(`Failed to fetch Authentication Token info from Google: ${e}`))
-			.andThen((res) => ResultAsync.fromPromise(res.json(), (e) => new Errors.MalformedResponse(`Failed to parse Authentication Token info JSON recieved from Google: ${e}`)))
-			.andThen(zodParseWith(googleTokenSchema, (errMsg) => new Errors.MalformedResponse("Recivied invalid Google token payload: " + errMsg)))
-			.andThen(
-				(payload) => {
-					if (payload.aud != env.GOOGLE_CLIENT_ID) return errAsync(new Errors.Unauthorized("Authorization Token gave Incorrect Audience"));
-					if (payload.email_verified !== "true") return errAsync(new Errors.Unauthorized("Authentication Token gave an Email which could not be verified"));
-					if (payload.email == null) return errAsync(new Errors.Unauthorized("Authentication Token did not correspond to an Email"));
-					if (payload.iss !== "https://accounts.google.com" && payload.iss !== "accounts.google.com") return errAsync(new Errors.Unauthorized("Invalid token issuer"));
-					if (payload.exp * 1000 < Date.now()) return errAsync(new Errors.Unauthorized("Token expired"));
-					if (!allowedEmails.includes(payload.email)) return errAsync(new Errors.Unauthorized("Email is unauthorized"));
-					return okAsync(payload.email);
-				},
-			)
-	}
+function getRequestJSON(request: Request, 
+						errFunc: (errMsg: string) => ErrorRes = (e: string) => new Errors.MalformedRequest(`Failed to parse request JSON: ${e}`)
+					    ): ResultAsync<any, ErrorRes> {
+	return ResultAsync.fromPromise(
+		request.json(),
+		(e) => errFunc(JSON.stringify(e))
+	);
+}
+
+function getAndParseRequestJSON<T>(request: Request, schema: z.ZodSchema<T>, 
+								   zodParseFailErrFunc: (errMsg: string) => ErrorRes, 
+								   requestJSONFailErrFunc: (errMsg: string) => ErrorRes = (e: string) => new Errors.MalformedRequest(`Failed to parse request JSON: ${e}`)
+								   ): ResultAsync<T, ErrorRes> {
+	return getRequestJSON(request, requestJSONFailErrFunc).andThen(zodParseWith(schema, zodParseFailErrFunc));
+}
 
 
-	if (request.method === "GET" && url.pathname === "/") {
-		return ResultAsync.fromPromise(env.DB.prepare(
-			` SELECT
+
+const routes: Record<string, (request: Request, env: env) => ResultAsync<Response, ErrorRes>> = {
+
+	"GET /": (_request, env) => queryDB(env.DB,`
+			SELECT
 			r.id,
 			r.swimmer_id,
 			r.event,
@@ -139,166 +140,147 @@ function handler (request: Request, env: env): ResultAsync<Response, ErrorRes> {
 			JOIN meets m ON r.meet_id = m.id
 			JOIN swimmers s ON r.swimmer_id = s.id
 			ORDER BY m.date DESC, r.time ASC`
-		).all(), (e) => new Errors.InternalDatabase(`Database query failed: ${e}`)).map((res) => 
-		new Response(JSON.stringify(res.results), {
-			headers: { "Content-Type": "application/json" }
-		}))
-	}
+		).map((res) => returnJSONResponse(res)),
 
-	if (request.method === "GET" && url.pathname === "/meets") {
-		return ResultAsync.fromPromise(env.DB.prepare(
-			` SELECT id, name, location, date
+
+
+	"GET /meets": (_request, env) => queryDB(env.DB, `
+			SELECT id, name, location, date
 			FROM meets
 			ORDER BY date DESC `
-		).all(), (e) => new Errors.InternalDatabase(`Database query failed: ${e}`)).map((res) => new Response(JSON.stringify(res.results), {
-			status: 200,
-			headers: { "Content-Type": "application/json" }
-		}));
-	}
-	if (
-		request.method === "GET" &&
-		url.pathname === "/recent_meets"
-	) {
-		return ResultAsync.fromPromise(env.DB.prepare(
-			` SELECT id, name, location, date
-			FROM meets
-			ORDER BY date DESC
-			LIMIT 5 `
-		).all(), (e) => new Errors.InternalDatabase(`Database query failed: ${e}`)).map((res) => new Response(JSON.stringify(res.results), {
-			status: 200,
-			headers: { "Content-Type": "application/json" }
-		}));
-	}
+		).map((res) => returnJSONResponse(res)),
 
-	if (request.method === "GET" && url.pathname === "/records") {
-		return ResultAsync.fromPromise(env.DB.prepare(
-			` SELECT	*			
-				FROM records
+
+
+	"POST /meets": (request, env) => verifyAuth(request, env)
+		.andThen(() => getAndParseRequestJSON(request, meetSchema, (errMsg) => new Errors.MalformedRequest("Given invalid meet data: " + errMsg)))
+		.andThen((json) => queryDB(env.DB, `
+			INSERT INTO meets (name, location, date)
+			VALUES (?, ?, ?)`,
+			(e) => new Errors.InternalDatabase(`Meet database insertion failed: ${e}`), [json.name, json.location, json.date])
+		), 
+
+
+	
+	"GET /records": (_request, env) => queryDB(env.DB,`
+			SELECT *			
+			FROM records
 			ORDER BY id DESC `
-		).all(), (e) => new Errors.InternalDatabase(`Database query failed: ${e}`)).map((res) => new Response(JSON.stringify(res.results), {
-			status: 200,
-			headers: { "Content-Type": "application/json" }
-		}));
-	}
+		).map((res) => returnJSONResponse(res)),
 
-	if (request.method === "GET" && url.pathname === "/swimmers") {
-		return ResultAsync.fromPromise(env.DB.prepare(
-			` SELECT id, name, graduating_year
+
+	
+	"POST /records": (request, env) => verifyAuth(request, env)
+		.andThen(() => getAndParseRequestJSON(request, recordSchema, (errMsg) => new Errors.MalformedRequest("Given invalid record data: " + errMsg)))
+		.andThen(
+			(json) => {
+				const placeholders = json.map(() => "(?, ?, ?, ?, ?, ?)").join(", ");
+				const values = json.flatMap((record) => [
+					record.meet_id,
+					record.swimmer_id,
+					record.event,
+					record.type,
+					record.time,
+					record.start
+				]);
+				return queryDB(env.DB, `
+					INSERT INTO records
+					(meet_id, swimmer_id, event, type, time, start)
+					VALUES ${placeholders}`,
+					(e) => new Errors.InternalDatabase(`Records database insertion failed: ${e}`), values)
+				.map((_) => new Response("Records sucessfully added", { status: 201 }));
+			}),
+
+
+
+	"GET /swimmers": (_request, env) => queryDB(env.DB,`
+			SELECT id, name, graduating_year
 			FROM swimmers
 			ORDER BY id ASC `
-		).all(), (e) => new Errors.InternalDatabase(`Database query failed: ${e}`)).map((res) => new Response(JSON.stringify(res.results), {
-			status: 200,
-			headers: { "Content-Type": "application/json" }
-		}));
-	}
+		).map((res) => returnJSONResponse(res)),	
 
-	if (request.method === "POST" && url.pathname === "/meets") {
-		return verifyAuth().andThen(
-			() => {
-				return ResultAsync.fromPromise(request.json(), (e) => new Errors.MalformedRequest(`Failed to parse request JSON: ${e}`));
-			}
-		).andThen(zodParseWith(meetSchema, (errMsg) => new Errors.MalformedRequest("Given invalid meet data: " + errMsg))
-		).andThen(
-		(json) => {
-			return ResultAsync.fromPromise(env.DB.prepare(
-				`
-				INSERT INTO meets (name, location, date)
-				VALUES (?, ?, ?)
-				`
-			)
-			.bind(json.name, json.location, json.date)
-			.run(), (e) => new Errors.InternalDatabase(`Database insertion failed: ${e}`)).map((_) => new Response("Meet added", { status: 201 }));
-		}
-		)
-	}
 
-	if (request.method === "POST" && url.pathname === "/records") {
-		return verifyAuth().andThen(
-			() => {
-				return ResultAsync.fromPromise(request.json(), (e) => new Errors.MalformedRequest(`Failed to parse request JSON: ${e}`));
-			}
-		).andThen(zodParseWith(recordSchema, (errMsg) => new Errors.MalformedRequest("Given invalid record data: " + errMsg))
-		).andThen(
-		(json) => {
-			const placeholders = json.map(() => "(?, ?, ?, ?, ?, ?)").join(", ");
-			const values = json.flatMap((record) => [
-				record.meet_id,
-				record.swimmer_id,
-				record.event,
-				record.type,
-				record.time,
-				record.start
-			]);
-			return ResultAsync.fromPromise(env.DB.prepare(
-				`
-				INSERT INTO records
-				(meet_id, swimmer_id, event, type, time, start)
-				VALUES ${placeholders}
-				`
-			).bind(...values).run(), (e) => new Errors.InternalDatabase(`Database insertion preparation failed: ${e}`)).map((_) => new Response("Records added", { status: 201 }));
-		})
 
-	}
-
-	if (request.method === "POST" && url.pathname === "/swimmers") {
-		return verifyAuth().andThen(
-			() => {
-				return ResultAsync.fromPromise(request.json(), (e) => new Errors.MalformedRequest(`Failed to parse request JSON: ${e}`));
-			}
-		).andThen(zodParseWith(swimmerSchema, (errMsg) => new Errors.MalformedRequest("Given invalid swimmer data: " + errMsg))
-		).andThen(
-		(json) => {
-			return ResultAsync.fromPromise(env.DB.prepare(
-				`
+	"POST /swimmers": (request, env) => verifyAuth(request, env).andThen(() => getAndParseRequestJSON(request, swimmerSchema, (errMsg) => new Errors.MalformedRequest("Given invalid swimmer data: " + errMsg)))
+		.andThen(
+			(json) => queryDB(env.DB,`
 				INSERT INTO swimmers
 				(name, graduating_year)
-				VALUES (?, ?)
-				`
-			)
-			.bind(json.name, json.graduating_year)
-			.run(), (e) => new Errors.InternalDatabase(`Database insertion failed: ${e}`)).map((_) => new Response("Swimmer added", { status: 201 }));
-		})
-	}
+				VALUES (?, ?)`,
+				(e) => new Errors.InternalDatabase(`Swimmers database insertion failed: ${e}`),
+				[json.name, json.graduating_year])
+			.map((_) => new Response("Swimmer added", { status: 201 }))
+		),
 
-	if (request.method === "POST" && url.pathname === "/verify") {
-		return verifyAuth().map((email) =>
+
+
+	"GET /recent_meets": (_request, env) => queryDB(env.DB,`
+				SELECT id, name, location, date
+				FROM meets
+				ORDER BY date DESC
+				LIMIT 5 `
+			).map((res) => returnJSONResponse(res)),
+
+	"POST /verify": (request, env) => verifyAuth(request, env).map((email) =>
 			new Response(
-				JSON.stringify({ allowed: true, email }),
-				{
-					headers: { "Content-Type": "application/json" }
-				}
+				JSON.stringify({ allowed: true, email }), { headers: { "Content-Type": "application/json" } }
 			)
-		);
+		),
+
+	"POST /relays": (request, env) => verifyAuth(request, env).andThen(() => getAndParseRequestJSON(request, relaySchema, (errMsg) => new Errors.MalformedRequest("Given invalid relay data: " + errMsg)))
+		.andThen(
+		(json) => queryDB(env.DB,`
+					INSERT INTO relays
+					(time, type, record_1_id, record_2_id, record_3_id, record_4_id)
+					VALUES (?, ?, ?, ?, ?, ?)`,
+					(e) => new Errors.InternalDatabase(`Relays database insertion failed: ${e}`),
+					[json.time, json.relay_type, json.record_1_id, json.record_2_id, json.record_3_id, json.record_4_id])
+				.map((_) => new Response("Relay added", { status: 201 })))
+};
+
+function verifyAuth(request: Request, env: env): ResultAsync<string, ErrorRes>{
+	const authHeader = request.headers.get("Authorization");
+	if (!authHeader?.startsWith("Bearer ")) return errAsync(new Errors.Unauthorized("No Authorization header"));
+	const token = authHeader.split(" ")[1];
+
+	const allowedEmails = ["ryanyun2010@gmail.com"];
+	return ResultAsync.fromPromise(fetch(
+		`https://oauth2.googleapis.com/tokeninfo?id_token=${token}`
+	), (e) => new Errors.NoResponse(`Failed to fetch Authentication Token info from Google: ${e}`))
+		.andThen((res) => ResultAsync.fromPromise(res.json(), (e) => new Errors.MalformedResponse(`Failed to parse Authentication Token info JSON recieved from Google: ${e}`)))
+		.andThen(zodParseWith(googleTokenSchema, (errMsg) => new Errors.MalformedResponse("Recivied invalid Google token payload: " + errMsg)))
+		.andThen(
+			(payload) => {
+				if (payload.aud != env.GOOGLE_CLIENT_ID) return errAsync(new Errors.Unauthorized("Authorization Token gave Incorrect Audience"));
+				if (payload.email_verified !== "true") return errAsync(new Errors.Unauthorized("Authentication Token gave an Email which could not be verified"));
+				if (payload.email == null) return errAsync(new Errors.Unauthorized("Authentication Token did not correspond to an Email"));
+				if (payload.iss !== "https://accounts.google.com" && payload.iss !== "accounts.google.com") return errAsync(new Errors.Unauthorized("Invalid token issuer"));
+						if (payload.exp * 1000 < Date.now()) return errAsync(new Errors.Unauthorized("Token expired"));
+					if (!allowedEmails.includes(payload.email)) return errAsync(new Errors.Unauthorized("Email is unauthorized"));
+				return okAsync(payload.email);
+			},
+		)
+}
+
+
+function handler (request: Request, env: env): ResultAsync<Response, ErrorRes> {
+	let url;
+	try {
+		url = new URL(request.url);
+	} catch (e) {
+		return errAsync(new Errors.MalformedRequest(`Invalid URL: ${e}`));
 	}
 
-	if (request.method === "POST" && url.pathname === "/relays") {
-		return verifyAuth().andThen(
-			() => {
-				return ResultAsync.fromPromise(request.json(), (e) => new Errors.MalformedRequest(`Failed to parse request JSON: ${e}`));
-			}
-		).andThen(zodParseWith(relaySchema, (errMsg) => new Errors.MalformedRequest("Given invalid relay data: " + errMsg))
-		).andThen(
-		(json) => {
-			return ResultAsync.fromPromise(env.DB.prepare(
-				`
-				INSERT INTO relays
-				(time, type, record_1_id, record_2_id, record_3_id, record_4_id)
-				VALUES (?, ?, ?, ?, ?, ?)
-				`
-			)
-			.bind(
-				json.time,
-				json.relay_type,
-				json.record_1_id,
-				json.record_2_id,
-				json.record_3_id,
-				json.record_4_id
-			)
-			.run(), (e) => new Errors.InternalDatabase(`Database insertion failed: ${e}`)).map((_) => new Response("Relay added", { status: 201 }));
-		})
+	if (request.method === "OPTIONS") {
+		return okAsync(new Response(null, { status: 204 }));
 	}
 
-	return errAsync(new Errors.NotFound(`Endpoint "${url.pathname}" not found`));
+	const key = `${request.method} ${url.pathname}`;
+	const route = routes[key];
+	if (route != null) {
+		return route(request, env);
+	}
+	return errAsync(new Errors.NotFound(`Endpoint "${key}" not found`));
 } 
 
 export default {
