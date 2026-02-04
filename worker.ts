@@ -45,28 +45,28 @@ const meetSchema = z.object({
 
 
 const recordSchema = z.object({
-		meet_id: z.number().int(),
-		swimmer_id: z.number().int(),
+		meet_id: z.coerce.number().int(),
+		swimmer_id: z.coerce.number().int(),
 		event: z.enum(allowedEvents),
 		type: z.enum(["individual", "relay"]),
 		start: z.enum(["flat", "relay"]),
-		time: z.number().positive()
+		time: z.coerce.number().positive()
 	});
 
 const recordsSchema = z.array(recordSchema);
 
 const swimmerSchema = z.object({
 	name: z.string().min(1, "Name is required"),
-	graduating_year: z.number().int()
+	graduating_year: z.coerce.number().int()
 });
 
 const relaySchema = z.object({
-	time: z.number().positive(),
+	time: z.coerce.number().positive(),
 	relay_type: z.enum(["200_mr", "200_fr", "400_fr"]),
-	record_1_id: z.number().int(),
-	record_2_id: z.number().int(),
-	record_3_id: z.number().int(),
-	record_4_id: z.number().int()
+	record_1_id: z.coerce.number().int(),
+	record_2_id: z.coerce.number().int(),
+	record_3_id: z.coerce.number().int(),
+	record_4_id: z.coerce.number().int()
 });
 
 
