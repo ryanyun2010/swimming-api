@@ -44,7 +44,6 @@ const meetSchema = z.object({
 	date: z.number().int("Date must be an integer")
 });
 
-
 const recordSchema = z.object({
 		meet_id: z.coerce.number().int(),
 		swimmer_id: z.coerce.number().int(),
@@ -123,10 +122,9 @@ function getRequestJSON(
 function getAndParseRequestJSON<T>(
 	request: Request, 
 	schema: z.ZodSchema<T>, 
-	zodParseFailErrFunc: (errMsg: string) => ErrorRes, 
-	requestJSONFailErrFunc: (errMsg: string) => ErrorRes = (e: string) => new Errors.MalformedRequest(`Failed to parse request JSON: ${e}`)
+	errFunc: (errMsg: string) => ErrorRes = (e: string) => new Errors.MalformedRequest(`Failed to parse request JSON: ${e}`)
 ): ResultAsync<T, ErrorRes> {
-	return getRequestJSON(request, requestJSONFailErrFunc).andThen(zodParseWith(schema, zodParseFailErrFunc));
+	return getRequestJSON(request, errFunc).andThen(zodParseWith(schema, errFunc));
 }
 
 
