@@ -139,6 +139,7 @@ const routes: Record<string, (request: Request, env: env) => ResultAsync<Respons
 			r.type,
 			r.time,
 			r.start,
+			m.id AS meet_id,
 			m.name AS meet_name,
 			m.location AS meet_location,
 			m.date AS meet_date,
