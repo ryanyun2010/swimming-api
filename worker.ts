@@ -103,7 +103,7 @@ function queryDB(
 }
 
 function returnJSONResponse(data: any, status: number = 200): Response {
-	return new Response(JSON.stringify(data), {
+	return new Response(JSON.stringify(data.results), {
 		status: status,
 		headers: { "Content-Type": "application/json" }
 	});
