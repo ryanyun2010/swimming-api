@@ -240,6 +240,22 @@ const routes: Record<string, (request: Request, env: env) => ResultAsync<Respons
 
 
 
+	"GET /relays": (_request, env) => queryDB(env.DB,`
+			SELECT
+			r.id,
+			r.time,
+			r.type AS relay_type,
+			r.record_1_id,
+			r.record_2_id,
+			r.record_3_id,
+			r.record_4_id
+			FROM relays r
+			ORDER BY r.id DESC `
+		).map((res) => returnJSONResponse(res)),
+
+
+
+
 	"POST /relays": (request, env) => verifyAuth(request, env).andThen(() => getAndParseRequestJSON(request, relaySchema, (errMsg) => new Errors.MalformedRequest("Given invalid relay data: " + errMsg)))
 		.andThen(
 		(json) => queryDB(env.DB,`
