@@ -183,21 +183,38 @@ const routes: Record<string, (request: Request, env: env) => ResultAsync<Respons
 		.andThen(() => getAndParseRequestJSON(request, recordsSchema, (errMsg) => new Errors.MalformedRequest("Given invalid record data: " + errMsg)))
 		.andThen(
 			(json) => {
-				const placeholders = json.map(() => "(?, ?, ?, ?, ?, ?)").join(", ");
-				const values = json.flatMap((record) => [
-					record.meet_id,
-					record.swimmer_id,
-					record.event,
-					record.type,
-					record.time,
-					record.start
-				]);
-				return queryDB(env.DB, `
-					INSERT INTO records
-					(meet_id, swimmer_id, event, type, time, start)
-					VALUES ${placeholders}`,
-					(e) => new Errors.InternalDatabase(`Records database insertion failed: ${e}`), values)
-				.map((_) => new Response("Records sucessfully added", { status: 201 }));
+				const batches = [];
+				const results = []
+
+				for (let i = 0; i < json.length; i += 16) {
+					batches.push(json.slice(i, i + 16));
+				}
+				for (let batch of batches) {
+					const placeholders = batch.map(() => "(?, ?, ?, ?, ?, ?)").join(", ");
+						const values = batch.flatMap((record) => [
+							record.meet_id,
+							record.swimmer_id,
+							record.event,
+							record.type,
+							record.time,
+							record.start
+						]);
+
+						results.push(queryDB(
+							env.DB,
+							`
+							INSERT INTO records
+							(meet_id, swimmer_id, event, type, time, start)
+							VALUES ${placeholders}
+							`,
+							(e) =>
+							new Errors.InternalDatabase(
+								`Records database insertion failed: ${e}`
+							),
+							values
+						));
+				}
+				return ResultAsync.combine(results).map(() => new Response("Records successfully added", { status: 201 }));
 			}),
 
 
