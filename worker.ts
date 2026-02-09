@@ -276,7 +276,10 @@ function verifyAuth(request: Request, env: env): ResultAsync<string, ErrorRes>{
 	return ResultAsync.fromPromise(fetch(
 		`https://oauth2.googleapis.com/tokeninfo?id_token=${token}`
 	), (e) => new Errors.NoResponse(`Failed to fetch Authentication Token info from Google: ${e}`))
-		.andThen((res) => ResultAsync.fromPromise(res.json(), (e) => new Errors.MalformedResponse(`Failed to parse Authentication Token info JSON recieved from Google: ${e}`)))
+		.andThen((res) => {
+			if (!(res instanceof Response)) return errAsync(new Errors.MalformedResponse("Google did not respond with a valid HTTP response when verifying Authentication Token"));
+			if (!res.ok) return errAsync(new Errors.Unauthorized(`Google responded with status ${res.status} when verifying Authentication Token`));
+			return ResultAsync.fromPromise(res.json(), (e) => new Errors.MalformedResponse(`Failed to parse Authentication Token info JSON recieved from Google: ${e}`))})
 		.andThen(zodParseWith(googleTokenSchema, (errMsg) => new Errors.MalformedResponse("Recivied invalid Google token payload: " + errMsg)))
 		.andThen(
 			(payload) => {
