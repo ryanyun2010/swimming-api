@@ -164,6 +164,11 @@ const routes: Record<string, (request: Request, env: env) => ResultAsync<Respons
 	"GET /relay_legs": (_request, env) => queryDB(env.DB,`
 		SELECT * from relay_legs
 	`).map((res) => returnJSONResponse(res)),
+
+	
+	"GET /relays": (_request, env) => queryDB(env.DB,`
+		SELECT * from relays
+	`).map((res) => returnJSONResponse(res)),
 			
 
 	
