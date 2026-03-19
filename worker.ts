@@ -131,157 +131,161 @@ function getAndParseRequestJSON<T>(
 /**** MAIN ROUTING ****/
 const routes: Record<string, (request: Request, env: env) => ResultAsync<Response, ErrorRes>> = {
 
-	"GET /": (_request, env) => queryDB(env.DB,`
-			SELECT
-			r.id,
-			r.swimmer_id,
-			r.event,
-			r.type,
-			r.time,
-			r.start,
-			m.id AS meet_id,
-			m.name AS meet_name,
-			m.location AS meet_location,
-			m.date AS meet_date,
-			s.name AS swimmer_name,
-			s.graduating_year AS swimmer_year
-			FROM records r
-			JOIN meets m ON r.meet_id = m.id
-			JOIN swimmers s ON r.swimmer_id = s.id
-			ORDER BY m.date DESC, r.time ASC`
-		).map((res) => returnJSONResponse(res)),
 
 
 
 	"GET /meets": (_request, env) => queryDB(env.DB, `
-			SELECT id, name, location, date
+			SELECT * 
 			FROM meets
 			ORDER BY date DESC `
 		).map((res) => returnJSONResponse(res)),
 
 
-
-	"POST /meets": (request, env) => verifyAuth(request, env)
-		.andThen(() => getAndParseRequestJSON(request, meetSchema, (errMsg) => new Errors.MalformedRequest("Given invalid meet data: " + errMsg)))
-		.andThen((json) => queryDB(env.DB, `
-			INSERT INTO meets (name, location, date)
-			VALUES (?, ?, ?)`,
-			(e) => new Errors.InternalDatabase(`Meet database insertion failed: ${e}`), [json.name, json.location, json.date])
-		), 
+	"GET /results": (_request, env) => queryDB(env.DB,`
+		SELECT * FROM results
+	`).map((res) => returnJSONResponse(res)),
 
 
-	
-	"GET /records": (_request, env) => queryDB(env.DB,`
-			SELECT *			
-			FROM records
-			ORDER BY id DESC `
-		).map((res) => returnJSONResponse(res)),
-
+	"GET /events": (_request, env) => queryDB(env.DB,`
+		SELECT * FROM events
+	`).map((res) => returnJSONResponse(res)),
 
 	
-	"POST /records": (request, env) => verifyAuth(request, env)
-		.andThen(() => getAndParseRequestJSON(request, recordsSchema, (errMsg) => new Errors.MalformedRequest("Given invalid record data: " + errMsg)))
-		.andThen(
-			(json) => {
-				const batches = [];
-				const results = []
-
-				for (let i = 0; i < json.length; i += 16) {
-					batches.push(json.slice(i, i + 16));
-				}
-				for (let batch of batches) {
-					const placeholders = batch.map(() => "(?, ?, ?, ?, ?, ?)").join(", ");
-						const values = batch.flatMap((record) => [
-							record.meet_id,
-							record.swimmer_id,
-							record.event,
-							record.type,
-							record.time,
-							record.start
-						]);
-
-						results.push(queryDB(
-							env.DB,
-							`
-							INSERT INTO records
-							(meet_id, swimmer_id, event, type, time, start)
-							VALUES ${placeholders}
-							`,
-							(e) =>
-							new Errors.InternalDatabase(
-								`Records database insertion failed: ${e}`
-							),
-							values
-						));
-				}
-				return ResultAsync.combine(results).map(() => new Response("Records successfully added", { status: 201 }));
-			}),
-
-
-
 	"GET /swimmers": (_request, env) => queryDB(env.DB,`
-			SELECT id, name, graduating_year
-			FROM swimmers
-			ORDER BY id ASC `
-		).map((res) => returnJSONResponse(res)),	
+		SELECT * FROM swimmers
+	`).map((res) => returnJSONResponse(res)),
+
+
+	"GET /records": (_request, env) => queryDB(env.DB,`
+		SELECT * from record_progressions
+	`).map((res) => returnJSONResponse(res)),
+			
+
+	
 
 
 
-	"POST /swimmers": (request, env) => verifyAuth(request, env).andThen(() => getAndParseRequestJSON(request, swimmerSchema, (errMsg) => new Errors.MalformedRequest("Given invalid swimmer data: " + errMsg)))
-		.andThen(
-			(json) => queryDB(env.DB,`
-				INSERT INTO swimmers
-				(name, graduating_year)
-				VALUES (?, ?)`,
-				(e) => new Errors.InternalDatabase(`Swimmers database insertion failed: ${e}`),
-				[json.name, json.graduating_year])
-			.map((_) => new Response("Swimmer added", { status: 201 }))
-		),
+	// "POST /meets": (request, env) => verifyAuth(request, env)
+	// 	.andThen(() => getAndParseRequestJSON(request, meetSchema, (errMsg) => new Errors.MalformedRequest("Given invalid meet data: " + errMsg)))
+	// 	.andThen((json) => queryDB(env.DB, `
+	// 		INSERT INTO meets (name, location, date)
+	// 		VALUES (?, ?, ?)`,
+	// 		(e) => new Errors.InternalDatabase(`Meet database insertion failed: ${e}`), [json.name, json.location, json.date])
+	// 	), 
 
 
-
-	"GET /recent_meets": (_request, env) => queryDB(env.DB,`
-				SELECT id, name, location, date
-				FROM meets
-				ORDER BY date DESC
-				LIMIT 5 `
-			).map((res) => returnJSONResponse(res)),
-
-
-
-	"POST /verify": (request, env) => verifyAuth(request, env).map((email) =>
-			new Response(
-				JSON.stringify({ allowed: true, email }), { headers: { "Content-Type": "application/json" } }
-			)
-		),
-
-
-
-	"GET /relays": (_request, env) => queryDB(env.DB,`
-			SELECT
-			r.id,
-			r.time,
-			r.type AS relay_type,
-			r.record_1_id,
-			r.record_2_id,
-			r.record_3_id,
-			r.record_4_id
-			FROM relays r
-			ORDER BY r.id DESC `
-		).map((res) => returnJSONResponse(res)),
-
-
-
-
-	"POST /relays": (request, env) => verifyAuth(request, env).andThen(() => getAndParseRequestJSON(request, relaySchema, (errMsg) => new Errors.MalformedRequest("Given invalid relay data: " + errMsg)))
-		.andThen(
-		(json) => queryDB(env.DB,`
-					INSERT INTO relays
-					(time, type, record_1_id, record_2_id, record_3_id, record_4_id)
-					VALUES (?, ?, ?, ?, ?, ?)`,
-					(e) => new Errors.InternalDatabase(`Relays database insertion failed: ${e}`),
-					[json.time, json.relay_type, json.record_1_id, json.record_2_id, json.record_3_id, json.record_4_id])
-				.map((_) => new Response("Relay added", { status: 201 })))
+	
+	// "GET /records": (_request, env) => queryDB(env.DB,`
+	// 		SELECT *			
+	// 		FROM records
+	// 		ORDER BY id DESC `
+	// 	).map((res) => returnJSONResponse(res)),
+	//
+	//
+	// 
+	// "POST /records": (request, env) => verifyAuth(request, env)
+	// 	.andThen(() => getAndParseRequestJSON(request, recordsSchema, (errMsg) => new Errors.MalformedRequest("Given invalid record data: " + errMsg)))
+	// 	.andThen(
+	// 		(json) => {
+	// 			const batches = [];
+	// 			const results = []
+	//
+	// 			for (let i = 0; i < json.length; i += 16) {
+	// 				batches.push(json.slice(i, i + 16));
+	// 			}
+	// 			for (let batch of batches) {
+	// 				const placeholders = batch.map(() => "(?, ?, ?, ?, ?, ?)").join(", ");
+	// 					const values = batch.flatMap((record) => [
+	// 						record.meet_id,
+	// 						record.swimmer_id,
+	// 						record.event,
+	// 						record.type,
+	// 						record.time,
+	// 						record.start
+	// 					]);
+	//
+	// 					results.push(queryDB(
+	// 						env.DB,
+	// 						`
+	// 						INSERT INTO records
+	// 						(meet_id, swimmer_id, event, type, time, start)
+	// 						VALUES ${placeholders}
+	// 						`,
+	// 						(e) =>
+	// 						new Errors.InternalDatabase(
+	// 							`Records database insertion failed: ${e}`
+	// 						),
+	// 						values
+	// 					));
+	// 			}
+	// 			return ResultAsync.combine(results).map(() => new Response("Records successfully added", { status: 201 }));
+	// 		}),
+	//
+	//
+	//
+	// "GET /swimmers": (_request, env) => queryDB(env.DB,`
+	// 		SELECT id, name, graduating_year
+	// 		FROM swimmers
+	// 		ORDER BY id ASC `
+	// 	).map((res) => returnJSONResponse(res)),	
+	//
+	//
+	//
+	// "POST /swimmers": (request, env) => verifyAuth(request, env).andThen(() => getAndParseRequestJSON(request, swimmerSchema, (errMsg) => new Errors.MalformedRequest("Given invalid swimmer data: " + errMsg)))
+	// 	.andThen(
+	// 		(json) => queryDB(env.DB,`
+	// 			INSERT INTO swimmers
+	// 			(name, graduating_year)
+	// 			VALUES (?, ?)`,
+	// 			(e) => new Errors.InternalDatabase(`Swimmers database insertion failed: ${e}`),
+	// 			[json.name, json.graduating_year])
+	// 		.map((_) => new Response("Swimmer added", { status: 201 }))
+	// 	),
+	//
+	//
+	//
+	// "GET /recent_meets": (_request, env) => queryDB(env.DB,`
+	// 			SELECT id, name, location, date
+	// 			FROM meets
+	// 			ORDER BY date DESC
+	// 			LIMIT 5 `
+	// 		).map((res) => returnJSONResponse(res)),
+	//
+	//
+	//
+	// "POST /verify": (request, env) => verifyAuth(request, env).map((email) =>
+	// 		new Response(
+	// 			JSON.stringify({ allowed: true, email }), { headers: { "Content-Type": "application/json" } }
+	// 		)
+	// 	),
+	//
+	//
+	//
+	// "GET /relays": (_request, env) => queryDB(env.DB,`
+	// 		SELECT
+	// 		r.id,
+	// 		r.time,
+	// 		r.type AS relay_type,
+	// 		r.record_1_id,
+	// 		r.record_2_id,
+	// 		r.record_3_id,
+	// 		r.record_4_id
+	// 		FROM relays r
+	// 		ORDER BY r.id DESC `
+	// 	).map((res) => returnJSONResponse(res)),
+	//
+	//
+	//
+	//
+	// "POST /relays": (request, env) => verifyAuth(request, env).andThen(() => getAndParseRequestJSON(request, relaySchema, (errMsg) => new Errors.MalformedRequest("Given invalid relay data: " + errMsg)))
+	// 	.andThen(
+	// 	(json) => queryDB(env.DB,`
+	// 				INSERT INTO relays
+	// 				(time, type, record_1_id, record_2_id, record_3_id, record_4_id)
+	// 				VALUES (?, ?, ?, ?, ?, ?)`,
+	// 				(e) => new Errors.InternalDatabase(`Relays database insertion failed: ${e}`),
+	// 				[json.time, json.relay_type, json.record_1_id, json.record_2_id, json.record_3_id, json.record_4_id])
+	// 			.map((_) => new Response("Relay added", { status: 201 })))
 };
 
 function verifyAuth(request: Request, env: env): ResultAsync<string, ErrorRes>{
@@ -333,7 +337,7 @@ function handler (request: Request, env: env): ResultAsync<Response, ErrorRes> {
 } 
 
 export default {
-	async fetch(request: Request, env: env) {
+	async fetch(request: Request, env: env): Promise<Response> {
 		const withCors = (response: Response) => {
 			response.headers.set(
 				"Access-Control-Allow-Origin",
