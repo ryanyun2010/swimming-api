@@ -236,7 +236,7 @@ const routes: Record<string, (request: Request, env: env) => ResultAsync<Respons
 					   PARTITION BY r.swimmer_id, r.event_id
 					   ORDER BY m.date, r.time_ms, r.id
 				   ) AS running_best
-			FROM results AS r
+			FROM relay_legs AS r
 			JOIN meets as m
 			ON r.meet_id = m.id
 			WHERE is_valid = 1
