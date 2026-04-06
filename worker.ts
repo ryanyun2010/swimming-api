@@ -245,7 +245,7 @@ const routes: Record<string, (request: Request, env: env) => ResultAsync<Respons
 			SELECT *,
 				   MIN(split_time) OVER (
 					   PARTITION BY r.swimmer_id, r.event_id
-					   ORDER BY m.date, r.time_ms, r.id
+					   ORDER BY m.date, r.split_time, r.id
 				   ) AS running_best
 			FROM relay_legs AS r
 			JOIN meets as m
@@ -262,7 +262,7 @@ const routes: Record<string, (request: Request, env: env) => ResultAsync<Respons
 			SELECT *,
 				   MIN(split_time) OVER (
 					   PARTITION BY r.event_id
-					   ORDER BY m.date, r.time_ms, r.id
+					   ORDER BY m.date, r.split_time, r.id
 				   ) AS running_best
 			FROM relay_legs AS r
 			JOIN meets as m
