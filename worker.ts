@@ -133,37 +133,37 @@ const routes: Record<string, (request: Request, env: env) => ResultAsync<Respons
 			SELECT * 
 			FROM meets
 			ORDER BY date DESC `
-		).map((res) => returnJSONResponse(res)),
+		),
 
 
 	"GET /results": (_request, env) => queryDB(env.DB,`
 		SELECT * FROM results
-	`).map((res) => returnJSONResponse(res)),
+	`),
 
 
 	"GET /events": (_request, env) => queryDB(env.DB,`
 		SELECT * FROM events
-	`).map((res) => returnJSONResponse(res)),
+	`),
 
 	
 	"GET /swimmers": (_request, env) => queryDB(env.DB,`
 		SELECT * FROM swimmers
-	`).map((res) => returnJSONResponse(res)),
+	`),
 
 
 	"GET /records": (_request, env) => queryDB(env.DB,`
 		SELECT * from record_progressions
-	`).map((res) => returnJSONResponse(res)),
+	`),
 
 	
 	"GET /relay_legs": (_request, env) => queryDB(env.DB,`
 		SELECT * from relay_legs
-	`).map((res) => returnJSONResponse(res)),
+	`),
 
 	
 	"GET /relays": (_request, env) => queryDB(env.DB,`
 		SELECT * from relays
-	`).map((res) => returnJSONResponse(res)),
+	`),
 			
 	
 	"POST /results": (request, env) => verifyAuth(request, env)
