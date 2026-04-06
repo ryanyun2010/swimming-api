@@ -24,51 +24,46 @@ const googleTokenSchema = z.object({
 });
 
 
-const allowedEvents = [
-	"50_free",
-	"50_back",
-	"50_breast",
-	"50_fly",
-	"100_free",
-	"100_back",
-	"100_breast",
-	"100_fly",
-	"200_free",
-	"200_im",
-	"500_free"
-] as const;
 
-const meetSchema = z.object({
-	name: z.string().min(1, "Name is required"),
-	location: z.string().min(1, "Location is required"),
-	date: z.number().int("Date must be an integer")
+const resultsSchema = z.object({
+	swimmer_id: z.coerce.number().int(),
+	event_id: z.coerce.number().int(),
+	meet_id: z.coerce.number().int(),
+	time_ms: z.coerce.number(),
+	is_valid: z.coerce.boolean(),
+	invalid_reason: z.string().nullable(),
 });
 
-const recordSchema = z.object({
-		meet_id: z.coerce.number().int(),
-		swimmer_id: z.coerce.number().int(),
-		event: z.enum(allowedEvents),
-		type: z.enum(["individual", "relay"]),
-		start: z.enum(["flat", "relay"]),
-		time: z.coerce.number().positive()
-	});
-
-const recordsSchema = z.array(recordSchema);
-
-const swimmerSchema = z.object({
-	name: z.string().min(1, "Name is required"),
-	graduating_year: z.coerce.number().int()
+const relayLegSchema = z.object({
+	relay_id: z.coerce.number().int(),
+	swimmer_id: z.coerce.number().int(),
+	event_id: z.coerce.number().int(),
+	leg_order: z.coerce.number().int(),
+	split_time: z.coerce.number(),
+	is_valid: z.coerce.boolean(), 
+	invalid_reason: z.string().nullable(),
 });
 
 const relaySchema = z.object({
-	time: z.coerce.number().positive(),
-	relay_type: z.enum(["200_mr", "200_fr", "400_fr"]),
-	record_1_id: z.coerce.number().int(),
-	record_2_id: z.coerce.number().int(),
-	record_3_id: z.coerce.number().int(),
-	record_4_id: z.coerce.number().int()
+	event_id: z.coerce.number().int(),
+	meet_id: z.coerce.number().int(),
+	time_ms: z.coerce.number(),
+	is_valid: z.coerce.boolean(), 
+	invalid_reason: z.string().nullable()
 });
 
+export const swimmerSchema = z.object({
+	first_name: z.string(),
+	last_name: z.string(),
+	gender: z.enum(['male', 'female']),
+	graduating: z.coerce.number().int()
+});
+
+export const meetSchema = z.object({
+	name: z.string(),
+	location: z.string(),
+	date: z.string()
+});
 
 /**** VARIOUS UTILITIES ****/ 
 function zodErrorToHumanReadable(err: ZodError): string {
@@ -170,10 +165,165 @@ const routes: Record<string, (request: Request, env: env) => ResultAsync<Respons
 		SELECT * from relays
 	`).map((res) => returnJSONResponse(res)),
 			
+	
+	"POST /results": (request, env) => verifyAuth(request, env)
+	.andThen(() => getAndParseRequestJSON(request, resultsSchema, (errMsg) => new Errors.MalformedRequest("Given invalid result data: " + errMsg)))
+	.andThen((json) => queryDB(env.DB, `
+		START TRANSACTION;
+
+		INSERT INTO results (swimmer_id, event_id, meet_id, time_ms, is_valid, invalid_reason)
+		VALUES (?, ?, ?, ?, ?, ?);
+		
+		DELETE FROM record_progressions
+		WHERE swimmer_id = ? AND event_id = ?;
+
+		INSERT INTO record_progressions (school_record, type, swimmer_id, relay_id, event_id, result_id, meet_id, leg_id, time_ms)
+		SELECT 0, 'individual', swimmer_id, null, event_id, id, meet_id, null, time_ms
+		FROM (
+			SELECT *,
+				   MIN(time_ms) OVER (
+					   PARTITION BY r.swimmer_id, r.event_id
+					   ORDER BY m.date, r.time_ms, r.id
+				   ) AS running_best
+			FROM results AS r
+			JOIN meets as m
+			ON r.meet_id = m.id
+			WHERE is_valid = 1
+		) 
+		WHERE time_ms = running_best
+		AND swimmer_id = ?;
+		AND event_id = ?;
+
+		INSERT INTO record_progressions (school_record, type, swimmer_id, relay_id, event_id, result_id, meet_id, leg_id, time_ms)
+		SELECT 1, ‘individual’, swimmer_id, null, event_id, id, meet_id, null, time_ms
+		FROM (
+			SELECT *,
+				   MIN(time_ms) OVER (
+					   PARTITION BY r.event_id
+					   ORDER BY m.date, r.time_ms, r.id
+				   ) AS running_best
+			FROM results AS r
+			JOIN meets as m
+			ON r.meet_id = m.id
+			WHERE is_valid = 1
+		) 
+		WHERE time_ms = running_best
+		AND swimmer_id = ?
+		AND event_id = ?;
+
+		COMMIT;
+		`,
+		(e) => new Errors.InternalDatabase(`Results database insertion failed: ${e}`),
+		[json.swimmer_id, json.event_id, json.meet_id, json.time_ms, json.is_valid, json.invalid_reason, json.swimmer_id, json.event_id, json.swimmer_id, json.event_id, json.swimmer_id, json.event_id])),
+	
+	
+	"POST /relayLegs": (request, env) => verifyAuth(request, env)
+	.andThen(() => getAndParseRequestJSON(request, relayLegSchema, (errMsg) => new Errors.MalformedRequest("Given invalid relay leg data: " + errMsg)))
+	.andThen((json) => queryDB(env.DB, `
+		START TRANSACTION;
+
+		INSERT INTO relay_legs (relay_id, swimmer_id, event_id, leg_order, split_time, is_valid, invalid_reason)
+		VALUES (?, ?, ?, ?, ?, ?, ?);
+
+		DELETE FROM record_progressions as r
+		WHERE swimmer_id = ? AND event_id = ?;
+
+		INSERT INTO record_progressions (school_record, type, swimmer_id, relay_id, event_id, result_id, meet_id, leg_id, time_ms)
+		SELECT 0, ‘relay_leg’, swimmer_id, null, event_id, null, meet_id, id, time_ms
+		FROM (
+			SELECT *,
+				   MIN(time_ms) OVER (
+					   PARTITION BY r.swimmer_id, r.event_id
+					   ORDER BY m.date, r.time_ms, r.id
+				   ) AS running_best
+			FROM results AS r
+			JOIN meets as m
+			ON r.meet_id = m.id
+			WHERE is_valid = 1
+		) 
+		WHERE time_ms = running_best
+		AND swimmer_id = ?
+		AND event_id = ?;
+
+		INSERT INTO record_progressions (school_record, type, swimmer_id, relay_id, event_id, result_id, meet_id, leg_id, time_ms)
+		SELECT 1, ‘relay_leg’, swimmer_id, null, event_id, null, meet_id, id, time_ms
+		FROM (
+			SELECT *,
+				   MIN(time_ms) OVER (
+					   PARTITION BY r.event_id
+					   ORDER BY m.date, r.time_ms, r.id
+				   ) AS running_best
+			FROM relay_legs AS r
+			JOIN meets as m
+			ON r.meet_id = m.id
+			WHERE is_valid = 1
+		) 
+		WHERE time_ms = running_best
+		AND swimmer_id = ?
+		AND event_id = ?;
+
+		COMMIT;
+		`, 
+		(e) => new Errors.InternalDatabase(`Relay Legs database insertion failed: ${e}`),
+		[json.relay_id, json.swimmer_id, json.event_id, json.leg_order, json.split_time, json.is_valid, json.invalid_reason, json.swimmer_id, json.event_id, json.swimmer_id, json.event_id, ])),
+
+
+	"POST /relays": (request, env) => verifyAuth(request, env)
+	.andThen(() => getAndParseRequestJSON(request, relaySchema, (errMsg) => new Errors.MalformedRequest("Given invalid relay data: " + errMsg)))
+	.andThen((json) => queryDB(env.DB, `
+		START TRANSACTION;
+
+		INSERT INTO relays (event_id, meet_id, time_ms, is_valid, invalid_reason)
+		VALUES (?, ?, ?, ?, ?)
+		
+		DELETE FROM record_progressions as r
+		WHERE r.event_id = ?;
+
+		INSERT INTO record_progressions (school_record, type, swimmer_id, relay_id, event_id, result_id, meet_id, leg_id, time_ms)
+		SELECT 1, ‘relay’, null, id, event_id, null, meet_id, null, time_ms,
+		FROM (
+			SELECT *,
+				   MIN(time_ms) OVER (
+					   PARTITION BY r.event_id
+					   ORDER BY m.date, r.time_ms, r.id
+				   ) AS running_best
+			FROM relays AS r
+			JOIN meets as m
+			ON r.meet_id = m.id
+			WHERE is_valid = 1
+		) 
+		WHERE time_ms = running_best
+		AND event_id = ?;
+
+		COMMIT;
+		`,
+		(e) => new Errors.InternalDatabase(`Relays database insertion failed: ${e}`),
+		[json.event_id, json.meet_id, json.time_ms, json.is_valid, json.invalid_reason, json.event_id, json.event_id])),
+
+
+	"POST /swimmers": (request, env) => verifyAuth(request, env)
+	.andThen(() => getAndParseRequestJSON(request, swimmerSchema, (errMsg) => new Errors.MalformedRequest("Given invalid swimmer data: " + errMsg)))	
+	.andThen((json) => queryDB(env.DB, `
+		INSERT INTO swimmers (first_name, last_name, gender, graduating)
+		VALUES (?, ?, ?, ?)`,
+		(e) => new Errors.InternalDatabase(`Swimmers database insertion failed: ${e}`),
+		[json.first_name,json.last_name,json.gender,json.graduating])),
 
 	
+	"POST /meets": (request, env) => verifyAuth(request, env)
+	.andThen(() => getAndParseRequestJSON(request, meetSchema, (errMsg) => new Errors.MalformedRequest("Given invalid meet data: " + errMsg)))
+	.andThen((json) => queryDB(env.DB, `
+		INSERT INTO meets (name, location, date)
+		VALUES (?, ?, ?)`,
+		(e) => new Errors.InternalDatabase(`Meet database insertion failed: ${e}`), 
+		[json.name, json.location, json.date])),
 
 
+	"POST /verify": (request, env) => verifyAuth(request, env).map((email) =>
+			new Response(
+				JSON.stringify({ allowed: true, email }), { headers: { "Content-Type": "application/json" } }
+			)
+		),
 
 	// "POST /meets": (request, env) => verifyAuth(request, env)
 	// 	.andThen(() => getAndParseRequestJSON(request, meetSchema, (errMsg) => new Errors.MalformedRequest("Given invalid meet data: " + errMsg)))
@@ -190,7 +340,7 @@ const routes: Record<string, (request: Request, env: env) => ResultAsync<Respons
 	// 		FROM records
 	// 		ORDER BY id DESC `
 	// 	).map((res) => returnJSONResponse(res)),
-	//
+
 	//
 	// 
 	// "POST /records": (request, env) => verifyAuth(request, env)
@@ -263,11 +413,6 @@ const routes: Record<string, (request: Request, env: env) => ResultAsync<Respons
 	//
 	//
 	//
-	// "POST /verify": (request, env) => verifyAuth(request, env).map((email) =>
-	// 		new Response(
-	// 			JSON.stringify({ allowed: true, email }), { headers: { "Content-Type": "application/json" } }
-	// 		)
-	// 	),
 	//
 	//
 	//
