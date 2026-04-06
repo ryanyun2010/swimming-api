@@ -101,12 +101,12 @@ function queryDBBatched(
 	db: D1Database,
 	queries: { query: string, binds?: any[] }[],
 	errFunc: (errMsg: string) => ErrorRes = (e: string) => new Errors.InternalDatabase(`Failed to query database: ${e}`)
-): ResultAsync<Response, ErrorRes> {
+): ResultAsync<D1Result[], ErrorRes> {
 	const preparedQueries = queries.map(q => db.prepare(q.query).bind(...(q.binds ?? [])));
 	return ResultAsync.fromPromise(
 		db.batch(preparedQueries),
 		(e) => {console.error("D1 error: ", e); return errFunc(JSON.stringify(e))}
-	).map((_) => new Response("Batch query successful", { status: 200 }));
+	);
 }
 
 function returnJSONResponse(data: any, status: number = 200): Response {
@@ -223,7 +223,8 @@ const routes: Record<string, (request: Request, env: env) => ResultAsync<Respons
 		AND swimmer_id = ?
 		AND event_id = ?
 			`, 'binds': [json.swimmer_id, json.event_id]}],
-		(e) => new Errors.InternalDatabase(`Results database insertion failed: ${e}`))),
+		(e) => new Errors.InternalDatabase(`Results database insertion failed: ${e}`)))
+	.map(() => new Response("Result successfully added", { status: 201 })),
 	
 	
 	"POST /relay_legs": (request, env) => verifyAuth(request, env)
@@ -271,37 +272,47 @@ const routes: Record<string, (request: Request, env: env) => ResultAsync<Respons
 		WHERE time_ms = running_best
 		AND swimmer_id = ?
 		AND event_id = ?`, 'binds': [json.swimmer_id, json.event_id]}], 
-		(e) => new Errors.InternalDatabase(`Relay Legs database insertion failed: ${e}`))),
+		(e) => new Errors.InternalDatabase(`Relay Legs database insertion failed: ${e}`)))
+	.map(() => new Response("Relay Leg successfully added", { status: 201 })),
+
 
 
 	"POST /relays": (request, env) => verifyAuth(request, env)
-	.andThen(() => getAndParseRequestJSON(request, relaySchema, (errMsg) => new Errors.MalformedRequest("Given invalid relay data: " + errMsg)))
-	.andThen((json) => queryDBBatched(env.DB, [{'query': `
-
-		INSERT INTO relays (event_id, meet_id, time_ms, is_valid, invalid_reason)
-		VALUES (?, ?, ?, ?, ?)`, 'binds': [json.event_id, json.meet_id, json.time_ms, json.is_valid, json.invalid_reason]},
-		{'query': `
-		DELETE FROM record_progressions as r
-		WHERE r.event_id = ?`, 'binds': [json.event_id]},
-		{'query': `
-		INSERT INTO record_progressions (school_record, type, swimmer_id, relay_id, event_id, result_id, meet_id, leg_id, time_ms)
-		SELECT 1, 'relay', null, id, event_id, null, meet_id, null, time_ms
-		FROM (
-			SELECT *,
-				   MIN(time_ms) OVER (
-					   PARTITION BY r.event_id
-					   ORDER BY m.date, r.time_ms, r.id
-				   ) AS running_best
-			FROM relays AS r
-			JOIN meets as m
-			ON r.meet_id = m.id
-			WHERE is_valid = 1
-		) 
-		WHERE time_ms = running_best
-		AND event_id = ?
-			`, 'binds': [json.event_id]}], 
-			(e) => new Errors.InternalDatabase(`Relays database insertion failed: ${e}`))),
-
+	.andThen(() => getAndParseRequestJSON(request, relaySchema,
+										  (errMsg) => new Errors.MalformedRequest("Given invalid relay data: " + errMsg)))
+	.andThen((json) =>
+			 queryDBBatched(env.DB, [
+				 {
+					 query: `
+					 INSERT INTO relays (event_id, meet_id, time_ms, is_valid, invalid_reason)
+					 VALUES (?, ?, ?, ?, ?)`,
+					 binds: [json.event_id, json.meet_id, json.time_ms, json.is_valid, json.invalid_reason]
+				 },
+				 {
+					 query: `SELECT last_insert_rowid() as id`
+				 },
+				 {
+					 query: `
+					 DELETE FROM record_progressions as r
+					 WHERE r.event_id = ?`,
+						 binds: [json.event_id]
+				 },
+				 {
+					 query: `
+					 INSERT INTO record_progressions (...)
+					 SELECT ...
+						 WHERE event_id = ?`,
+						 binds: [json.event_id]
+				 }
+			 ])
+			 .map((results) => {
+				 const relayId = (results[1] as any as {results: {id:number}[]}).results[0].id;
+				 return new Response(
+					 JSON.stringify({ message: "Relay successfully added", relay_id: relayId }),
+					 { status: 201, headers: { "Content-Type": "application/json" } }
+				 );
+			 })
+	),
 
 	"POST /swimmers": (request, env) => verifyAuth(request, env)
 	.andThen(() => getAndParseRequestJSON(request, swimmerSchema, (errMsg) => new Errors.MalformedRequest("Given invalid swimmer data: " + errMsg)))	
