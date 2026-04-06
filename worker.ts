@@ -252,7 +252,7 @@ const routes: Record<string, (request: Request, env: env) => ResultAsync<Respons
 			ON r.relay_id = rel.id
 			JOIN meets as m
 			ON rel.meet_id = m.id
-			WHERE is_valid = 1
+			WHERE r.is_valid = 1
 		) 
 		WHERE time_ms = running_best
 		AND swimmer_id = ?
@@ -271,7 +271,7 @@ const routes: Record<string, (request: Request, env: env) => ResultAsync<Respons
 			ON r.relay_id = rel.id
 			JOIN meets as m
 			ON rel.meet_id = m.id
-			WHERE is_valid = 1
+			WHERE r.is_valid = 1
 		) 
 		WHERE time_ms = running_best
 		AND swimmer_id = ?
