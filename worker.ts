@@ -510,7 +510,7 @@ export default {
 		};
 		return handler(request, env).match(
 			(response) => withCors(response),
-				(error) => withCors(new Response(error.name + ": " +error.message, { status: error.status }))
+				(error) => {console.error("Error handling request:", error); return withCors(new Response(error.name + ": " +error.message, { status: error.status }))}
 		);
 	}
 };
