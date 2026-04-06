@@ -299,9 +299,21 @@ const routes: Record<string, (request: Request, env: env) => ResultAsync<Respons
 				 },
 				 {
 					 query: `
-					 INSERT INTO record_progressions (...)
-					 SELECT ...
-						 WHERE event_id = ?`,
+					 INSERT INTO record_progressions (school_record, type, swimmer_id, relay_id, event_id, result_id, meet_id, leg_id, time_ms)
+					 SELECT 1, 'relay', null, id, event_id, null, meet_id, null, time_ms
+					 FROM (
+						SELECT *,
+							MIN(time_ms) OVER (
+								PARTITION BY r.event_id
+								ORDER BY m.date, r.time_ms, r.id
+							) AS running_best
+						FROM relays AS r
+						JOIN meets as m
+						ON r.meet_id = m.id
+						WHERE is_valid = 1
+					 )
+					 WHERE time_ms = running_best
+					 WHERE event_id = ?`,
 						 binds: [json.event_id]
 				 }
 			 ])
