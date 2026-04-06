@@ -93,7 +93,7 @@ function queryDB(
 ): ResultAsync<any, ErrorRes> {
 	return ResultAsync.fromPromise(
 		db.prepare(query).bind(...binds).all(),
-		(e) => errFunc(JSON.stringify(e))
+		(e) => {console.error("D1 error: ", e); return errFunc(JSON.stringify(e))}
 	).map((res) => returnJSONResponse(res));
 }
 
