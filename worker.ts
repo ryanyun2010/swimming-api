@@ -191,11 +191,11 @@ const routes: Record<string, (request: Request, env: env) => ResultAsync<Respons
 			WHERE is_valid = 1
 		) 
 		WHERE time_ms = running_best
-		AND swimmer_id = ?;
+		AND swimmer_id = ?
 		AND event_id = ?;
 
 		INSERT INTO record_progressions (school_record, type, swimmer_id, relay_id, event_id, result_id, meet_id, leg_id, time_ms)
-		SELECT 1, ‘individual’, swimmer_id, null, event_id, id, meet_id, null, time_ms
+		SELECT 1, 'individual', swimmer_id, null, event_id, id, meet_id, null, time_ms
 		FROM (
 			SELECT *,
 				   MIN(time_ms) OVER (
@@ -229,7 +229,7 @@ const routes: Record<string, (request: Request, env: env) => ResultAsync<Respons
 		WHERE swimmer_id = ? AND event_id = ?;
 
 		INSERT INTO record_progressions (school_record, type, swimmer_id, relay_id, event_id, result_id, meet_id, leg_id, time_ms)
-		SELECT 0, ‘relay_leg’, swimmer_id, null, event_id, null, meet_id, id, time_ms
+		SELECT 0, 'relay_leg', swimmer_id, null, event_id, null, meet_id, id, time_ms
 		FROM (
 			SELECT *,
 				   MIN(time_ms) OVER (
@@ -280,7 +280,7 @@ const routes: Record<string, (request: Request, env: env) => ResultAsync<Respons
 		WHERE r.event_id = ?;
 
 		INSERT INTO record_progressions (school_record, type, swimmer_id, relay_id, event_id, result_id, meet_id, leg_id, time_ms)
-		SELECT 1, ‘relay’, null, id, event_id, null, meet_id, null, time_ms,
+		SELECT 1, 'relay', null, id, event_id, null, meet_id, null, time_ms,
 		FROM (
 			SELECT *,
 				   MIN(time_ms) OVER (
