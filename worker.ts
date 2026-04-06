@@ -217,7 +217,7 @@ const routes: Record<string, (request: Request, env: env) => ResultAsync<Respons
 		[json.swimmer_id, json.event_id, json.meet_id, json.time_ms, json.is_valid, json.invalid_reason, json.swimmer_id, json.event_id, json.swimmer_id, json.event_id, json.swimmer_id, json.event_id])),
 	
 	
-	"POST /relayLegs": (request, env) => verifyAuth(request, env)
+	"POST /relay_legs": (request, env) => verifyAuth(request, env)
 	.andThen(() => getAndParseRequestJSON(request, relayLegSchema, (errMsg) => new Errors.MalformedRequest("Given invalid relay leg data: " + errMsg)))
 	.andThen((json) => queryDB(env.DB, `
 		START TRANSACTION;
@@ -508,9 +508,14 @@ export default {
 			);
 			return response;
 		};
-		return handler(request, env).match(
-			(response) => withCors(response),
-			(error) => withCors(new Response(error.name + ": " +error.message, { status: error.status }))
-		);
+		try {
+			return handler(request, env).match(
+				(response) => withCors(response),
+					(error) => withCors(new Response(error.name + ": " +error.message, { status: error.status }))
+			);
+		} catch (e) {
+			const errorResponse = new Errors.InternalServer(`Unexpected error: ${e instanceof Error ? e.message : String(e)}`);
+			return withCors(new Response(errorResponse.name + ": " + errorResponse.message, { status: errorResponse.status }));
+		}
 	}
 };
