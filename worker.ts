@@ -313,7 +313,7 @@ const routes: Record<string, (request: Request, env: env) => ResultAsync<Respons
 						WHERE is_valid = 1
 					 )
 					 WHERE time_ms = running_best
-					 WHERE event_id = ?`,
+					 AND event_id = ?`,
 						 binds: [json.event_id]
 				 }
 			 ])
