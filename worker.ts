@@ -248,8 +248,10 @@ const routes: Record<string, (request: Request, env: env) => ResultAsync<Respons
 					   ORDER BY m.date, r.split_time, r.id
 				   ) AS running_best
 			FROM relay_legs AS r
+			JOIN relays as rel
+			ON r.relay_id = rel.id
 			JOIN meets as m
-			ON r.meet_id = m.id
+			ON rel.meet_id = m.id
 			WHERE is_valid = 1
 		) 
 		WHERE time_ms = running_best
@@ -265,8 +267,10 @@ const routes: Record<string, (request: Request, env: env) => ResultAsync<Respons
 					   ORDER BY m.date, r.split_time, r.id
 				   ) AS running_best
 			FROM relay_legs AS r
+			JOIN relays as rel
+			ON r.relay_id = rel.id
 			JOIN meets as m
-			ON r.meet_id = m.id
+			ON rel.meet_id = m.id
 			WHERE is_valid = 1
 		) 
 		WHERE time_ms = running_best
