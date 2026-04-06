@@ -280,7 +280,7 @@ const routes: Record<string, (request: Request, env: env) => ResultAsync<Respons
 		WHERE r.event_id = ?;
 
 		INSERT INTO record_progressions (school_record, type, swimmer_id, relay_id, event_id, result_id, meet_id, leg_id, time_ms)
-		SELECT 1, 'relay', null, id, event_id, null, meet_id, null, time_ms,
+		SELECT 1, 'relay', null, id, event_id, null, meet_id, null, time_ms
 		FROM (
 			SELECT *,
 				   MIN(time_ms) OVER (
