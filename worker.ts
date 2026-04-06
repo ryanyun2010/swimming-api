@@ -240,7 +240,7 @@ const routes: Record<string, (request: Request, env: env) => ResultAsync<Respons
 			{'query': `
 
 		INSERT INTO record_progressions (school_record, type, swimmer_id, relay_id, event_id, result_id, meet_id, leg_id, time_ms)
-		SELECT 0, 'relay_leg', swimmer_id, null, event_id, null, meet_id, id, time_ms
+		SELECT 0, 'relay_leg', swimmer_id, null, event_id, null, meet_id, id, split_time
 		FROM (
 			SELECT *,
 				   MIN(split_time) OVER (
@@ -254,12 +254,12 @@ const routes: Record<string, (request: Request, env: env) => ResultAsync<Respons
 			ON rel.meet_id = m.id
 			WHERE r.is_valid = 1
 		) 
-		WHERE time_ms = running_best
+		WHERE split_time = running_best
 		AND swimmer_id = ?
 		AND event_id = ?`, 'binds': [json.swimmer_id, json.event_id]},
 			{'query': `
 		INSERT INTO record_progressions (school_record, type, swimmer_id, relay_id, event_id, result_id, meet_id, leg_id, time_ms)
-		SELECT 1, 'relay_leg', swimmer_id, null, event_id, null, meet_id, id, time_ms
+		SELECT 1, 'relay_leg', swimmer_id, null, event_id, null, meet_id, id, split_time
 		FROM (
 			SELECT *,
 				   MIN(split_time) OVER (
@@ -273,7 +273,7 @@ const routes: Record<string, (request: Request, env: env) => ResultAsync<Respons
 			ON rel.meet_id = m.id
 			WHERE r.is_valid = 1
 		) 
-		WHERE time_ms = running_best
+		WHERE split_time = running_best
 		AND swimmer_id = ?
 		AND event_id = ?`, 'binds': [json.swimmer_id, json.event_id]}], 
 		(e) => new Errors.InternalDatabase(`Relay Legs database insertion failed: ${e}`)))
