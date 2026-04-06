@@ -94,7 +94,7 @@ function queryDB(
 	return ResultAsync.fromPromise(
 		db.prepare(query).bind(...binds).all(),
 		(e) => errFunc(JSON.stringify(e))
-	).map((res) => returnJSONResponse(res.results));
+	).map((res) => returnJSONResponse(res));
 }
 
 function returnJSONResponse(data: any, status: number = 200): Response {
