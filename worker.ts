@@ -90,11 +90,23 @@ function queryDB(
 	query: string, 
 	errFunc: (errMsg: string) => ErrorRes = (e: string) => new Errors.InternalDatabase(`Failed to query database: ${e}`),
 	binds: any[] = []
-): ResultAsync<any, ErrorRes> {
+): ResultAsync<Response, ErrorRes> {
 	return ResultAsync.fromPromise(
 		db.prepare(query).bind(...binds).all(),
 		(e) => {console.error("D1 error: ", e); return errFunc(JSON.stringify(e))}
 	).map((res) => returnJSONResponse(res));
+}
+
+function queryDBBatched(
+	db: D1Database,
+	queries: { query: string, binds?: any[] }[],
+	errFunc: (errMsg: string) => ErrorRes = (e: string) => new Errors.InternalDatabase(`Failed to query database: ${e}`)
+): ResultAsync<Response, ErrorRes> {
+	const preparedQueries = queries.map(q => db.prepare(q.query).bind(...(q.binds ?? [])));
+	return ResultAsync.fromPromise(
+		db.batch(preparedQueries),
+		(e) => {console.error("D1 error: ", e); return errFunc(JSON.stringify(e))}
+	).map((_) => new Response("Batch query successful", { status: 200 }));
 }
 
 function returnJSONResponse(data: any, status: number = 200): Response {
@@ -168,15 +180,13 @@ const routes: Record<string, (request: Request, env: env) => ResultAsync<Respons
 	
 	"POST /results": (request, env) => verifyAuth(request, env)
 	.andThen(() => getAndParseRequestJSON(request, resultsSchema, (errMsg) => new Errors.MalformedRequest("Given invalid result data: " + errMsg)))
-	.andThen((json) => queryDB(env.DB, `
-		START TRANSACTION;
-
+	.andThen((json) => queryDBBatched(env.DB, [{'query': `
 		INSERT INTO results (swimmer_id, event_id, meet_id, time_ms, is_valid, invalid_reason)
-		VALUES (?, ?, ?, ?, ?, ?);
-		
+		VALUES (?, ?, ?, ?, ?, ?)`, 'binds': [json.swimmer_id, json.event_id, json.meet_id, json.time_ms, json.is_valid, json.invalid_reason]},
+			{'query': `
 		DELETE FROM record_progressions
-		WHERE swimmer_id = ? AND event_id = ?;
-
+		WHERE swimmer_id = ? AND event_id = ?`, 'binds': [json.swimmer_id, json.event_id]},
+			{'query': `
 		INSERT INTO record_progressions (school_record, type, swimmer_id, relay_id, event_id, result_id, meet_id, leg_id, time_ms)
 		SELECT 0, 'individual', swimmer_id, null, event_id, id, meet_id, null, time_ms
 		FROM (
@@ -192,7 +202,9 @@ const routes: Record<string, (request: Request, env: env) => ResultAsync<Respons
 		) 
 		WHERE time_ms = running_best
 		AND swimmer_id = ?
-		AND event_id = ?;
+		AND event_id = ?
+		`, 'binds': [json.swimmer_id, json.event_id]},
+			{'query': `
 
 		INSERT INTO record_progressions (school_record, type, swimmer_id, relay_id, event_id, result_id, meet_id, leg_id, time_ms)
 		SELECT 1, 'individual', swimmer_id, null, event_id, id, meet_id, null, time_ms
@@ -209,24 +221,22 @@ const routes: Record<string, (request: Request, env: env) => ResultAsync<Respons
 		) 
 		WHERE time_ms = running_best
 		AND swimmer_id = ?
-		AND event_id = ?;
-
-		COMMIT;
-		`,
-		(e) => new Errors.InternalDatabase(`Results database insertion failed: ${e}`),
-		[json.swimmer_id, json.event_id, json.meet_id, json.time_ms, json.is_valid, json.invalid_reason, json.swimmer_id, json.event_id, json.swimmer_id, json.event_id, json.swimmer_id, json.event_id])),
+		AND event_id = ?
+			`, 'binds': [json.swimmer_id, json.event_id]}],
+		(e) => new Errors.InternalDatabase(`Results database insertion failed: ${e}`))),
 	
 	
 	"POST /relay_legs": (request, env) => verifyAuth(request, env)
 	.andThen(() => getAndParseRequestJSON(request, relayLegSchema, (errMsg) => new Errors.MalformedRequest("Given invalid relay leg data: " + errMsg)))
-	.andThen((json) => queryDB(env.DB, `
-		START TRANSACTION;
+	.andThen((json) => queryDBBatched(env.DB, [{'query': `
 
 		INSERT INTO relay_legs (relay_id, swimmer_id, event_id, leg_order, split_time, is_valid, invalid_reason)
-		VALUES (?, ?, ?, ?, ?, ?, ?);
+		VALUES (?, ?, ?, ?, ?, ?, ?)`, 'binds': [json.relay_id, json.swimmer_id, json.event_id, json.leg_order, json.split_time, json.is_valid, json.invalid_reason]},
+			{'query': `
 
 		DELETE FROM record_progressions as r
-		WHERE swimmer_id = ? AND event_id = ?;
+		WHERE swimmer_id = ? AND event_id = ?`, 'binds': [json.swimmer_id, json.event_id]},
+			{'query': `
 
 		INSERT INTO record_progressions (school_record, type, swimmer_id, relay_id, event_id, result_id, meet_id, leg_id, time_ms)
 		SELECT 0, 'relay_leg', swimmer_id, null, event_id, null, meet_id, id, time_ms
@@ -243,8 +253,8 @@ const routes: Record<string, (request: Request, env: env) => ResultAsync<Respons
 		) 
 		WHERE time_ms = running_best
 		AND swimmer_id = ?
-		AND event_id = ?;
-
+		AND event_id = ?`, 'binds': [json.swimmer_id, json.event_id]},
+			{'query': `
 		INSERT INTO record_progressions (school_record, type, swimmer_id, relay_id, event_id, result_id, meet_id, leg_id, time_ms)
 		SELECT 1, ‘relay_leg’, swimmer_id, null, event_id, null, meet_id, id, time_ms
 		FROM (
@@ -260,25 +270,20 @@ const routes: Record<string, (request: Request, env: env) => ResultAsync<Respons
 		) 
 		WHERE time_ms = running_best
 		AND swimmer_id = ?
-		AND event_id = ?;
-
-		COMMIT;
-		`, 
-		(e) => new Errors.InternalDatabase(`Relay Legs database insertion failed: ${e}`),
-		[json.relay_id, json.swimmer_id, json.event_id, json.leg_order, json.split_time, json.is_valid, json.invalid_reason, json.swimmer_id, json.event_id, json.swimmer_id, json.event_id, ])),
+		AND event_id = ?`, 'binds': [json.swimmer_id, json.event_id]}], 
+		(e) => new Errors.InternalDatabase(`Relay Legs database insertion failed: ${e}`))),
 
 
 	"POST /relays": (request, env) => verifyAuth(request, env)
 	.andThen(() => getAndParseRequestJSON(request, relaySchema, (errMsg) => new Errors.MalformedRequest("Given invalid relay data: " + errMsg)))
-	.andThen((json) => queryDB(env.DB, `
-		START TRANSACTION;
+	.andThen((json) => queryDBBatched(env.DB, [{'query': `
 
 		INSERT INTO relays (event_id, meet_id, time_ms, is_valid, invalid_reason)
-		VALUES (?, ?, ?, ?, ?)
-		
+		VALUES (?, ?, ?, ?, ?)`, 'binds': [json.event_id, json.meet_id, json.time_ms, json.is_valid, json.invalid_reason]},
+		{'query': `
 		DELETE FROM record_progressions as r
-		WHERE r.event_id = ?;
-
+		WHERE r.event_id = ?`, 'binds': [json.event_id]},
+		{'query': `
 		INSERT INTO record_progressions (school_record, type, swimmer_id, relay_id, event_id, result_id, meet_id, leg_id, time_ms)
 		SELECT 1, 'relay', null, id, event_id, null, meet_id, null, time_ms
 		FROM (
@@ -293,12 +298,9 @@ const routes: Record<string, (request: Request, env: env) => ResultAsync<Respons
 			WHERE is_valid = 1
 		) 
 		WHERE time_ms = running_best
-		AND event_id = ?;
-
-		COMMIT;
-		`,
-		(e) => new Errors.InternalDatabase(`Relays database insertion failed: ${e}`),
-		[json.event_id, json.meet_id, json.time_ms, json.is_valid, json.invalid_reason, json.event_id, json.event_id])),
+		AND event_id = ?
+			`, 'binds': [json.event_id]}], 
+			(e) => new Errors.InternalDatabase(`Relays database insertion failed: ${e}`))),
 
 
 	"POST /swimmers": (request, env) => verifyAuth(request, env)
