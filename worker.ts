@@ -508,14 +508,9 @@ export default {
 			);
 			return response;
 		};
-		try {
-			return handler(request, env).match(
-				(response) => withCors(response),
-					(error) => withCors(new Response(error.name + ": " +error.message, { status: error.status }))
-			);
-		} catch (e) {
-			const errorResponse = new Errors.InternalServer(`Unexpected error: ${e instanceof Error ? e.message : String(e)}`);
-			return withCors(new Response(errorResponse.name + ": " + errorResponse.message, { status: errorResponse.status }));
-		}
+		return handler(request, env).match(
+			(response) => withCors(response),
+				(error) => withCors(new Response(error.name + ": " +error.message, { status: error.status }))
+		);
 	}
 };
