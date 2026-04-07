@@ -144,7 +144,7 @@ const routes: Record<string, (request: Request, env: env) => ResultAsync<Respons
 	"GET /meets": (_request, env) => queryDB(env.DB, `
 			SELECT * 
 			FROM meets
-			ORDER BY date DESC `
+			ORDER BY date ASC `
 		),
 
 
@@ -163,9 +163,15 @@ const routes: Record<string, (request: Request, env: env) => ResultAsync<Respons
 	`),
 
 
-	"GET /records": (_request, env) => queryDB(env.DB,`
-		SELECT * from record_progressions
-	`),
+	"GET /records": (_request, env) => queryDB(
+  env.DB,
+  `
+    SELECT rp.*
+    FROM record_progressions rp
+    JOIN meets m ON rp.meet_id = m.id
+    ORDER BY m.date ASC, rp.time_ms ASC, rp.id ASC
+  `
+),
 
 	
 	"GET /relay_legs": (_request, env) => queryDB(env.DB,`
