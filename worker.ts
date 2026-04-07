@@ -527,7 +527,7 @@ WHERE split_time = running_best
   AND event_id = ?`,
     binds: [json.event_id],
   },
-]
+],
 
 			(e) => new Errors.InternalDatabase(`Relay Legs database insertion failed: ${e}`),
 		),
