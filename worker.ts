@@ -169,7 +169,7 @@ const routes: Record<string, (request: Request, env: env) => ResultAsync<Respons
     SELECT rp.*
     FROM record_progressions rp
     JOIN meets m ON rp.meet_id = m.id
-    ORDER BY m.date ASC, rp.time_ms ASC, rp.id ASC
+    ORDER BY m.date ASC, rp.time_ms DESC, rp.id ASC
   `
 ),
 
