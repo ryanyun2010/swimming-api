@@ -144,7 +144,7 @@ const routes: Record<string, (request: Request, env: env) => ResultAsync<Respons
 	"GET /meets": (_request, env) => queryDB(env.DB, `
 			SELECT * 
 			FROM meets
-			ORDER BY date ASC `
+			ORDER BY date DESC `
 		),
 
 
