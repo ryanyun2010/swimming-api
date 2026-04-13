@@ -685,7 +685,7 @@ function verifyAuth(request: Request, env: env): ResultAsync<string, ErrorRes>{
 	if (!authHeader?.startsWith("Bearer ")) return errAsync(new Errors.Unauthorized("No Authorization header"));
 	const token = authHeader.split(" ")[1];
 
-	const allowedEmails = ["ryanyun2010@gmail.com"];
+	const allowedEmails = ["ryanyun2010@gmail.com", "cathypolinsky@gmail.com"];
 	return ResultAsync.fromPromise(fetch(
 		`https://oauth2.googleapis.com/tokeninfo?id_token=${token}`
 	), (e) => new Errors.NoResponse(`Failed to fetch Authentication Token info from Google: ${e}`))
