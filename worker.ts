@@ -25,51 +25,46 @@ const googleTokenSchema = z.object({
 });
 
 
-const allowedEvents = [
-	"50_free",
-	"50_back",
-	"50_breast",
-	"50_fly",
-	"100_free",
-	"100_back",
-	"100_breast",
-	"100_fly",
-	"200_free",
-	"200_im",
-	"500_free"
-] as const;
 
-const meetSchema = z.object({
-	name: z.string().min(1, "Name is required"),
-	location: z.string().min(1, "Location is required"),
-	date: z.number().int("Date must be an integer")
+const resultsSchema = z.object({
+	swimmer_id: z.coerce.number().int(),
+	event_id: z.coerce.number().int(),
+	meet_id: z.coerce.number().int(),
+	time_ms: z.coerce.number(),
+	is_valid: z.coerce.boolean(),
+	invalid_reason: z.string().nullable(),
 });
 
-const recordSchema = z.object({
-		meet_id: z.coerce.number().int(),
-		swimmer_id: z.coerce.number().int(),
-		event: z.enum(allowedEvents),
-		type: z.enum(["individual", "relay"]),
-		start: z.enum(["flat", "relay"]),
-		time: z.coerce.number().positive()
-	});
-
-const recordsSchema = z.array(recordSchema);
-
-const swimmerSchema = z.object({
-	name: z.string().min(1, "Name is required"),
-	graduating_year: z.coerce.number().int()
+const relayLegSchema = z.object({
+	relay_id: z.coerce.number().int(),
+	swimmer_id: z.coerce.number().int(),
+	event_id: z.coerce.number().int(),
+	leg_order: z.coerce.number().int(),
+	split_time: z.coerce.number(),
+	is_valid: z.coerce.boolean(), 
+	invalid_reason: z.string().nullable(),
 });
 
 const relaySchema = z.object({
-	time: z.coerce.number().positive(),
-	relay_type: z.enum(["200_mr", "200_fr", "400_fr"]),
-	record_1_id: z.coerce.number().int(),
-	record_2_id: z.coerce.number().int(),
-	record_3_id: z.coerce.number().int(),
-	record_4_id: z.coerce.number().int()
+	event_id: z.coerce.number().int(),
+	meet_id: z.coerce.number().int(),
+	time_ms: z.coerce.number(),
+	is_valid: z.coerce.boolean(), 
+	invalid_reason: z.string().nullable()
 });
 
+export const swimmerSchema = z.object({
+	first_name: z.string(),
+	last_name: z.string(),
+	gender: z.enum(['male', 'female']),
+	graduating: z.coerce.number().int()
+});
+
+export const meetSchema = z.object({
+	name: z.string(),
+	location: z.string(),
+	date: z.string()
+});
 
 /**** VARIOUS UTILITIES ****/ 
 function zodErrorToHumanReadable(err: ZodError): string {
@@ -96,10 +91,22 @@ function queryDB(
 	query: string, 
 	errFunc: (errMsg: string) => ErrorRes = (e: string) => new Errors.InternalDatabase(`Failed to query database: ${e}`),
 	binds: any[] = []
-): ResultAsync<any, ErrorRes> {
+): ResultAsync<Response, ErrorRes> {
 	return ResultAsync.fromPromise(
 		db.prepare(query).bind(...binds).all(),
-		(e) => errFunc(JSON.stringify(e))
+		(e) => {console.error("D1 error: ", e); return errFunc(JSON.stringify(e))}
+	).map((res) => returnJSONResponse(res));
+}
+
+function queryDBBatched(
+	db: D1Database,
+	queries: { query: string, binds?: any[] }[],
+	errFunc: (errMsg: string) => ErrorRes = (e: string) => new Errors.InternalDatabase(`Failed to query database: ${e}`)
+): ResultAsync<D1Result[], ErrorRes> {
+	const preparedQueries = queries.map(q => db.prepare(q.query).bind(...(q.binds ?? [])));
+	return ResultAsync.fromPromise(
+		db.batch(preparedQueries),
+		(e) => {console.error("D1 error: ", e); return errFunc(JSON.stringify(e))}
 	);
 }
 
@@ -193,27 +200,452 @@ const routes: Record<string, (request: Request, env: env, ctx: ExecutionContext)
 			SELECT * FROM swimmers
 		  `),
 
-		"GET /records": (req, env, ctx) =>
-		  cachedQuery(req, env, ctx, "records", `
-			SELECT rp.*
-			FROM record_progressions rp
-			JOIN meets m ON rp.meet_id = m.id
-			ORDER BY m.date ASC, rp.time_ms DESC, rp.id ASC
-		  `),
-
-		"GET /relay_legs": (req, env, ctx) =>
-		  cachedQuery(req, env, ctx, "relay_legs", `
-			SELECT * FROM relay_legs
-		  `),
-
-		"GET /relays": (req, env, ctx) =>
-		  cachedQuery(req, env, ctx, "relays", `
-			SELECT * FROM relays
-		  `),
+	"GET /records": (req, env, ctx) => cachedQuery(req,env,ctx,"records",
+  env.DB,
+  `
+    SELECT rp.*
+    FROM record_progressions rp
+    JOIN meets m ON rp.meet_id = m.id
+    ORDER BY m.date ASC, rp.time_ms DESC, rp.id ASC
+  `
+),
 
 	
+	"GET /relay_legs": (req, env, ctx) => cachedQuery(req,env,ctx,"relay_legs",`
+		SELECT * from relay_legs
+	`),
+
+	
+	"GET /relays": (req, env, ctx) => cachedQuery(req,env, ctx, "relays",`
+		SELECT * from relays
+	`),
+			
+	
+	"POST /results": (request, env) => verifyAuth(request, env)
+	.andThen(() =>
+		getAndParseRequestJSON(
+			request,
+			resultsSchema,
+			(errMsg) => new Errors.MalformedRequest("Given invalid result data: " + errMsg),
+		),
+	)
+	.andThen((json) =>
+		queryDBBatched(
+			env.DB,
+			[
+  {
+    query: `
+INSERT INTO results (swimmer_id, event_id, meet_id, time_ms, is_valid, invalid_reason)
+VALUES (?, ?, ?, ?, ?, ?)`,
+    binds: [
+      json.swimmer_id,
+      json.event_id,
+      json.meet_id,
+      json.time_ms,
+      json.is_valid,
+      json.invalid_reason,
+    ],
+  },
+
+  // --- delete personal record progression for this swimmer/event
+  {
+    query: `
+DELETE FROM record_progressions
+WHERE school_record = 0 AND type = 'individual'
+  AND swimmer_id = ? AND event_id = ?`,
+    binds: [json.swimmer_id, json.event_id],
+  },
+
+  // --- delete all SCHOOL record progression for this event
+  {
+    query: `
+DELETE FROM record_progressions
+WHERE school_record = 1 AND type = 'individual'
+  AND event_id = ?`,
+    binds: [json.event_id],
+  },
+
+  // --- rebuild individual PR progression (includes relay leg 1)
+  {
+    query: `
+INSERT INTO record_progressions (school_record, type, swimmer_id, relay_id, event_id, result_id, meet_id, leg_id, time_ms)
+SELECT 0, 'individual', swimmer_id, null, event_id, result_id, meet_id, leg_id, time_ms
+FROM (
+  SELECT *,
+         MIN(time_ms) OVER (
+           PARTITION BY swimmer_id, event_id
+           ORDER BY date, time_ms, id
+         ) AS running_best
+  FROM (
+    SELECT r.id,
+           r.swimmer_id,
+           r.event_id,
+           r.meet_id,
+           r.time_ms,
+           r.id AS result_id,
+           NULL AS leg_id,
+           m.date
+    FROM results r
+    JOIN meets m ON r.meet_id = m.id
+    WHERE r.is_valid = 1
+
+    UNION ALL
+
+    SELECT rl.id,
+           rl.swimmer_id,
+           rl.event_id,
+           rel.meet_id,
+           rl.split_time AS time_ms,
+           NULL AS result_id,
+           rl.id AS leg_id,
+           m.date
+    FROM relay_legs rl
+    JOIN relays rel ON rl.relay_id = rel.id
+    JOIN meets m ON rel.meet_id = m.id
+    WHERE rl.is_valid = 1
+      AND rl.leg_order = 1
+  )
+)
+WHERE time_ms = running_best
+  AND swimmer_id = ?
+  AND event_id = ?`,
+    binds: [json.swimmer_id, json.event_id],
+  },
+
+  // --- rebuild individual SCHOOL record progression (global per event)
+  {
+    query: `
+INSERT INTO record_progressions (school_record, type, swimmer_id, relay_id, event_id, result_id, meet_id, leg_id, time_ms)
+SELECT 1, 'individual', swimmer_id, null, event_id, result_id, meet_id, leg_id, time_ms
+FROM (
+  SELECT *,
+         MIN(time_ms) OVER (
+           PARTITION BY event_id
+           ORDER BY date, time_ms, id
+         ) AS running_best
+  FROM (
+    SELECT r.id,
+           r.swimmer_id,
+           r.event_id,
+           r.meet_id,
+           r.time_ms,
+           r.id AS result_id,
+           NULL AS leg_id,
+           m.date
+    FROM results r
+    JOIN meets m ON r.meet_id = m.id
+    WHERE r.is_valid = 1
+
+    UNION ALL
+
+    SELECT rl.id,
+           rl.swimmer_id,
+           rl.event_id,
+           rel.meet_id,
+           rl.split_time AS time_ms,
+           NULL AS result_id,
+           rl.id AS leg_id,
+           m.date
+    FROM relay_legs rl
+    JOIN relays rel ON rl.relay_id = rel.id
+    JOIN meets m ON rel.meet_id = m.id
+    WHERE rl.is_valid = 1
+      AND rl.leg_order = 1
+  )
+)
+WHERE time_ms = running_best
+  AND event_id = ?`,
+    binds: [json.event_id],
+  },
+],
+			(e) => new Errors.InternalDatabase(`Results database insertion failed: ${e}`),
+		),
+	)
+	.map(() => new Response("Result successfully added", { status: 201 })),
+	
+	
+	"POST /relay_legs": (request, env) => verifyAuth(request, env)
+	.andThen(() =>
+		getAndParseRequestJSON(
+			request,
+			relayLegSchema,
+			(errMsg) => new Errors.MalformedRequest("Given invalid relay leg data: " + errMsg),
+		),
+	)
+	.andThen((json) =>
+		queryDBBatched(
+			env.DB,
+			[
+  {
+    query: `
+INSERT INTO relay_legs (relay_id, swimmer_id, event_id, leg_order, split_time, is_valid, invalid_reason)
+VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    binds: [
+      json.relay_id,
+      json.swimmer_id,
+      json.event_id,
+      json.leg_order,
+      json.split_time,
+      json.is_valid,
+      json.invalid_reason,
+    ],
+  },
+
+  // --- delete personal record progression (individual)
+  {
+    query: `
+DELETE FROM record_progressions
+WHERE school_record = 0 AND type = 'individual'
+  AND swimmer_id = ? AND event_id = ?`,
+    binds: [json.swimmer_id, json.event_id],
+  },
+
+  // --- delete school record progression (individual)
+  {
+    query: `
+DELETE FROM record_progressions
+WHERE school_record = 1 AND type = 'individual'
+  AND event_id = ?`,
+    binds: [json.event_id],
+  },
+
+  // --- delete personal record progression (relay_leg)
+  {
+    query: `
+DELETE FROM record_progressions
+WHERE school_record = 0 AND type = 'relay_leg'
+  AND swimmer_id = ? AND event_id = ?`,
+    binds: [json.swimmer_id, json.event_id],
+  },
+
+  // --- delete school record progression (relay_leg)
+  {
+    query: `
+DELETE FROM record_progressions
+WHERE school_record = 1 AND type = 'relay_leg'
+  AND event_id = ?`,
+    binds: [json.event_id],
+  },
+
+  // --- rebuild individual PR progression (includes relay leg 1)
+  {
+    query: `
+INSERT INTO record_progressions (school_record, type, swimmer_id, relay_id, event_id, result_id, meet_id, leg_id, time_ms)
+SELECT 0, 'individual', swimmer_id, null, event_id, result_id, meet_id, leg_id, time_ms
+FROM (
+  SELECT *,
+         MIN(time_ms) OVER (
+           PARTITION BY swimmer_id, event_id
+           ORDER BY date, time_ms, id
+         ) AS running_best
+  FROM (
+    SELECT r.id,
+           r.swimmer_id,
+           r.event_id,
+           r.meet_id,
+           r.time_ms,
+           r.id AS result_id,
+           NULL AS leg_id,
+           m.date
+    FROM results r
+    JOIN meets m ON r.meet_id = m.id
+    WHERE r.is_valid = 1
+
+    UNION ALL
+
+    SELECT rl.id,
+           rl.swimmer_id,
+           rl.event_id,
+           rel.meet_id,
+           rl.split_time AS time_ms,
+           NULL AS result_id,
+           rl.id AS leg_id,
+           m.date
+    FROM relay_legs rl
+    JOIN relays rel ON rl.relay_id = rel.id
+    JOIN meets m ON rel.meet_id = m.id
+    WHERE rl.is_valid = 1
+      AND rl.leg_order = 1
+  )
+)
+WHERE time_ms = running_best
+  AND swimmer_id = ?
+  AND event_id = ?`,
+    binds: [json.swimmer_id, json.event_id],
+  },
+
+  // --- rebuild individual SCHOOL record progression
+  {
+    query: `
+INSERT INTO record_progressions (school_record, type, swimmer_id, relay_id, event_id, result_id, meet_id, leg_id, time_ms)
+SELECT 1, 'individual', swimmer_id, null, event_id, result_id, meet_id, leg_id, time_ms
+FROM (
+  SELECT *,
+         MIN(time_ms) OVER (
+           PARTITION BY event_id
+           ORDER BY date, time_ms, id
+         ) AS running_best
+  FROM (
+    SELECT r.id,
+           r.swimmer_id,
+           r.event_id,
+           r.meet_id,
+           r.time_ms,
+           r.id AS result_id,
+           NULL AS leg_id,
+           m.date
+    FROM results r
+    JOIN meets m ON r.meet_id = m.id
+    WHERE r.is_valid = 1
+
+    UNION ALL
+
+    SELECT rl.id,
+           rl.swimmer_id,
+           rl.event_id,
+           rel.meet_id,
+           rl.split_time AS time_ms,
+           NULL AS result_id,
+           rl.id AS leg_id,
+           m.date
+    FROM relay_legs rl
+    JOIN relays rel ON rl.relay_id = rel.id
+    JOIN meets m ON rel.meet_id = m.id
+    WHERE rl.is_valid = 1
+      AND rl.leg_order = 1
+  )
+)
+WHERE time_ms = running_best
+  AND event_id = ?`,
+    binds: [json.event_id],
+  },
+
+  // --- rebuild relay_leg PR progression (legs 2–4)
+  {
+    query: `
+INSERT INTO record_progressions (school_record, type, swimmer_id, relay_id, event_id, result_id, meet_id, leg_id, time_ms)
+SELECT 0, 'relay_leg', swimmer_id, null, event_id, null, meet_id, id, split_time
+FROM (
+  SELECT *,
+         MIN(split_time) OVER (
+           PARTITION BY r.swimmer_id, r.event_id
+           ORDER BY m.date, r.split_time, r.id
+         ) AS running_best
+  FROM relay_legs AS r
+  JOIN relays as rel ON r.relay_id = rel.id
+  JOIN meets as m ON rel.meet_id = m.id
+  WHERE r.is_valid = 1
+    AND r.leg_order != 1
+) 
+WHERE split_time = running_best
+  AND swimmer_id = ?
+  AND event_id = ?`,
+    binds: [json.swimmer_id, json.event_id],
+  },
+
+  // --- rebuild relay_leg SCHOOL record progression (legs 2–4)
+  {
+    query: `
+INSERT INTO record_progressions (school_record, type, swimmer_id, relay_id, event_id, result_id, meet_id, leg_id, time_ms)
+SELECT 1, 'relay_leg', swimmer_id, null, event_id, null, meet_id, id, split_time
+FROM (
+  SELECT *,
+         MIN(split_time) OVER (
+           PARTITION BY r.event_id
+           ORDER BY m.date, r.split_time, r.id
+         ) AS running_best
+  FROM relay_legs AS r
+  JOIN relays as rel ON r.relay_id = rel.id
+  JOIN meets as m ON rel.meet_id = m.id
+  WHERE r.is_valid = 1
+    AND r.leg_order != 1
+) 
+WHERE split_time = running_best
+  AND event_id = ?`,
+    binds: [json.event_id],
+  },
+],
+
+			(e) => new Errors.InternalDatabase(`Relay Legs database insertion failed: ${e}`),
+		),
+	)
+	.map(() => new Response("Relay Leg successfully added", { status: 201 })),
 
 
+
+
+	"POST /relays": (request, env) => verifyAuth(request, env)
+	.andThen(() => getAndParseRequestJSON(request, relaySchema,
+										  (errMsg) => new Errors.MalformedRequest("Given invalid relay data: " + errMsg)))
+	.andThen((json) =>
+			 queryDBBatched(env.DB, [
+				 {
+					 query: `
+					 INSERT INTO relays (event_id, meet_id, time_ms, is_valid, invalid_reason)
+					 VALUES (?, ?, ?, ?, ?)`,
+					 binds: [json.event_id, json.meet_id, json.time_ms, json.is_valid, json.invalid_reason]
+				 },
+				 {
+					 query: `SELECT last_insert_rowid() as id`
+				 },
+				 {
+					 query: `
+					 DELETE FROM record_progressions as r
+					 WHERE r.event_id = ?`,
+						 binds: [json.event_id]
+				 },
+				 {
+					 query: `
+					 INSERT INTO record_progressions (school_record, type, swimmer_id, relay_id, event_id, result_id, meet_id, leg_id, time_ms)
+					 SELECT 1, 'relay', null, id, event_id, null, meet_id, null, time_ms
+					 FROM (
+						SELECT *,
+							MIN(time_ms) OVER (
+								PARTITION BY r.event_id
+								ORDER BY m.date, r.time_ms, r.id
+							) AS running_best
+						FROM relays AS r
+						JOIN meets as m
+						ON r.meet_id = m.id
+						WHERE is_valid = 1
+					 )
+					 WHERE time_ms = running_best
+					 AND event_id = ?`,
+						 binds: [json.event_id]
+				 }
+			 ])
+			 .map((results) => {
+				 const relayId = (results[1] as any as {results: {id:number}[]}).results[0].id;
+				 return new Response(
+					 JSON.stringify({ message: "Relay successfully added", relay_id: relayId }),
+					 { status: 201, headers: { "Content-Type": "application/json" } }
+				 );
+			 })
+	),
+
+	"POST /swimmers": (request, env) => verifyAuth(request, env)
+	.andThen(() => getAndParseRequestJSON(request, swimmerSchema, (errMsg) => new Errors.MalformedRequest("Given invalid swimmer data: " + errMsg)))	
+	.andThen((json) => queryDB(env.DB, `
+		INSERT INTO swimmers (first_name, last_name, gender, graduating)
+		VALUES (?, ?, ?, ?)`,
+		(e) => new Errors.InternalDatabase(`Swimmers database insertion failed: ${e}`),
+		[json.first_name,json.last_name,json.gender,json.graduating])),
+
+	
+	"POST /meets": (request, env) => verifyAuth(request, env)
+	.andThen(() => getAndParseRequestJSON(request, meetSchema, (errMsg) => new Errors.MalformedRequest("Given invalid meet data: " + errMsg)))
+	.andThen((json) => queryDB(env.DB, `
+		INSERT INTO meets (name, location, date)
+		VALUES (?, ?, ?)`,
+		(e) => new Errors.InternalDatabase(`Meet database insertion failed: ${e}`), 
+		[json.name, json.location, json.date])),
+
+
+	"POST /verify": (request, env) => verifyAuth(request, env).map((email) =>
+			new Response(
+				JSON.stringify({ allowed: true, email }), { headers: { "Content-Type": "application/json" } }
+			)
+		),
 
 	// "POST /meets": (request, env) => verifyAuth(request, env)
 	// 	.andThen(() => getAndParseRequestJSON(request, meetSchema, (errMsg) => new Errors.MalformedRequest("Given invalid meet data: " + errMsg)))
@@ -230,7 +662,7 @@ const routes: Record<string, (request: Request, env: env, ctx: ExecutionContext)
 	// 		FROM records
 	// 		ORDER BY id DESC `
 	// 	).map((res) => returnJSONResponse(res)),
-	//
+
 	//
 	// 
 	// "POST /records": (request, env) => verifyAuth(request, env)
@@ -303,11 +735,6 @@ const routes: Record<string, (request: Request, env: env, ctx: ExecutionContext)
 	//
 	//
 	//
-	// "POST /verify": (request, env) => verifyAuth(request, env).map((email) =>
-	// 		new Response(
-	// 			JSON.stringify({ allowed: true, email }), { headers: { "Content-Type": "application/json" } }
-	// 		)
-	// 	),
 	//
 	//
 	//
@@ -405,7 +832,7 @@ export default {
 		};
 		return handler(request, env, ctx).match(
 			(response) => withCors(response),
-			(error) => withCors(new Response(error.name + ": " +error.message, { status: error.status }))
+				(error) => {console.error("Error handling request:", error); return withCors(new Response(error.name + ": " +error.message, { status: error.status }))}
 		);
 	}
 };
