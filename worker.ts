@@ -146,33 +146,42 @@ export function cachedQuery(
   const cache = (caches as any).default as Cache;
 
   return ResultAsync.fromPromise(
-    (async () => {
-      let version = await env.CACHE_VERSIONS.get(key);
-      if (!version) {
-        version = Date.now().toString();
-        ctx.waitUntil(env.CACHE_VERSIONS.put(key, version));
+    env.CACHE_VERSIONS.get(key),
+    (e) => new Errors.InternalDatabase(String(e))
+  ).andThen((version) => {
+    if (!version) {
+      const newVersion = Date.now().toString();
+      ctx.waitUntil(env.CACHE_VERSIONS.put(key, newVersion));
+      return okAsync(newVersion);
+    }
+    return okAsync(version);
+  }).andThen((version) => {
+    const cacheKey = new Request(`${request.url}?v=${version}`, request);
+
+    return ResultAsync.fromPromise(
+      cache.match(cacheKey),
+      (e) => new Errors.InternalDatabase(String(e))
+    ).andThen((cached) => {
+      if (cached) {
+        return okAsync(cached);
       }
 
-      const cacheKey = new Request(`${request.url}?v=${version}`, request);
+      // 👇 IMPORTANT: stay in ResultAsync
+      return queryDB(env.DB, query).andThen((response) => {
+        const newResponse = new Response(response.body, {
+          status: response.status,
+          headers: {
+            ...Object.fromEntries(response.headers),
+            "Cache-Control": `public, max-age=${CACHE_TTL}`,
+          },
+        });
 
-      const cached = await cache.match(cacheKey);
-      if (cached) return cached;
+        ctx.waitUntil(cache.put(cacheKey, newResponse.clone()));
 
-      const data = await queryDB(env.DB, query);
-
-      const response = new Response(JSON.stringify((data as any).results), {
-        headers: {
-          "Content-Type": "application/json",
-          "Cache-Control": `public, max-age=${CACHE_TTL}`,
-        },
+        return okAsync(newResponse);
       });
-
-      ctx.waitUntil(cache.put(cacheKey, response.clone()));
-
-      return response;
-    })(),
-    (e) => (e instanceof Error ? new Errors.InternalDatabase(String(e)) : new Errors.InternalDatabase("Unknown error during cached query"))
-  );
+    });
+  });
 }
 
 export function invalidateCacheKey(
