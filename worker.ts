@@ -160,7 +160,7 @@ export function cachedQuery(
 
       const data = await queryDB(env.DB, query);
 
-      const response = new Response(JSON.stringify(data), {
+      const response = new Response(JSON.stringify((data as any).results), {
         headers: {
           "Content-Type": "application/json",
           "Cache-Control": `public, max-age=${CACHE_TTL}`,
