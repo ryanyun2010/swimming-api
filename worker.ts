@@ -9,6 +9,7 @@ import {ErrorRes} from "./errors";
 interface env {
 	DB: D1Database;
 	GOOGLE_CLIENT_ID: string;
+	CACHE_VERSIONS: KVNamespace;
 }
 
 const googleTokenSchema = z.object({
@@ -134,36 +135,72 @@ function getAndParseRequestJSON<T>(
 	return getRequestJSON(request, errFunc).andThen(zodParseWith(schema, errFunc));
 }
 
+const CACHE_TTL = 60 * 30; // 30 min
+export function cachedQuery(
+  request: Request,
+  env: env,
+  ctx: ExecutionContext,
+  key: string,
+  query: string
+): ResultAsync<Response, ErrorRes> {
+  const cache = (caches as any).default as Cache;
+
+  return ResultAsync.fromPromise(
+    (async () => {
+      let version = await env.CACHE_VERSIONS.get(key);
+      if (!version) {
+        version = Date.now().toString();
+        ctx.waitUntil(env.CACHE_VERSIONS.put(key, version));
+      }
+
+      const cacheKey = new Request(`${request.url}?v=${version}`, request);
+
+      const cached = await cache.match(cacheKey);
+      if (cached) return cached;
+
+      const data = await queryDB(env.DB, query);
+
+      const response = new Response(JSON.stringify(data), {
+        headers: {
+          "Content-Type": "application/json",
+          "Cache-Control": `public, max-age=${CACHE_TTL}`,
+        },
+      });
+
+      ctx.waitUntil(cache.put(cacheKey, response.clone()));
+
+      return response;
+    })(),
+    (e) => (e instanceof Error ? new Errors.InternalDatabase(String(e)) : new Errors.InternalDatabase("Unknown error during cached query"))
+  );
+}
 
 /**** MAIN ROUTING ****/
-const routes: Record<string, (request: Request, env: env) => ResultAsync<Response, ErrorRes>> = {
+const routes: Record<string, (request: Request, env: env, ctx: ExecutionContext) => ResultAsync<Response, ErrorRes>> = {
 
 
 
+		"GET /meets": (req, env, ctx) =>
+		  cachedQuery(req, env, ctx, "meets", `
+			SELECT * FROM meets ORDER BY date DESC
+		  `),
 
-	"GET /meets": (_request, env) => queryDB(env.DB, `
-			SELECT * 
-			FROM meets
-			ORDER BY date DESC `
-		),
+		"GET /results": (req, env, ctx) =>
+		  cachedQuery(req, env, ctx, "results", `
+			SELECT * FROM results
+		  `),
 
+		"GET /events": (req, env, ctx) =>
+		  cachedQuery(req, env, ctx, "events", `
+			SELECT * FROM events
+		  `),
 
-	"GET /results": (_request, env) => queryDB(env.DB,`
-		SELECT * FROM results
-	`),
+		"GET /swimmers": (req, env, ctx) =>
+		  cachedQuery(req, env, ctx, "swimmers", `
+			SELECT * FROM swimmers
+		  `),
 
-
-	"GET /events": (_request, env) => queryDB(env.DB,`
-		SELECT * FROM events
-	`),
-
-	
-	"GET /swimmers": (_request, env) => queryDB(env.DB,`
-		SELECT * FROM swimmers
-	`),
-
-
-	"GET /records": (_request, env) => queryDB(
+	"GET /records": (req, env, ctx) => cachedQuery(req,env,ctx,"records",
   env.DB,
   `
     SELECT rp.*
@@ -174,12 +211,12 @@ const routes: Record<string, (request: Request, env: env) => ResultAsync<Respons
 ),
 
 	
-	"GET /relay_legs": (_request, env) => queryDB(env.DB,`
+	"GET /relay_legs": (req, env, ctx) => cachedQuery(req,env,ctx,"relay_legs",`
 		SELECT * from relay_legs
 	`),
 
 	
-	"GET /relays": (_request, env) => queryDB(env.DB,`
+	"GET /relays": (req, env, ctx) => cachedQuery(req,env, ctx, "relays",`
 		SELECT * from relays
 	`),
 			
@@ -756,7 +793,7 @@ function verifyAuth(request: Request, env: env): ResultAsync<string, ErrorRes>{
 }
 
 
-function handler (request: Request, env: env): ResultAsync<Response, ErrorRes> {
+function handler (request: Request, env: env, ctx: ExecutionContext): ResultAsync<Response, ErrorRes> {
 	let url;
 	try {
 		url = new URL(request.url);
@@ -771,13 +808,13 @@ function handler (request: Request, env: env): ResultAsync<Response, ErrorRes> {
 	const key = `${request.method} ${url.pathname}`;
 	const route = routes[key];
 	if (route != null) {
-		return route(request, env);
+		return route(request, env, ctx);
 	}
 	return errAsync(new Errors.NotFound(`Endpoint "${key}" not found`));
 } 
 
 export default {
-	async fetch(request: Request, env: env): Promise<Response> {
+	async fetch(request: Request, env: env, ctx: ExecutionContext): Promise<Response> {
 		const withCors = (response: Response) => {
 			response.headers.set(
 				"Access-Control-Allow-Origin",
@@ -793,7 +830,7 @@ export default {
 			);
 			return response;
 		};
-		return handler(request, env).match(
+		return handler(request, env, ctx).match(
 			(response) => withCors(response),
 				(error) => {console.error("Error handling request:", error); return withCors(new Response(error.name + ": " +error.message, { status: error.status }))}
 		);
