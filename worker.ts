@@ -198,7 +198,7 @@ export function invalidateCacheKey(
 const routes: Record<string, (request: Request, env: env, ctx: ExecutionContext) => ResultAsync<Response, ErrorRes>> = {
 
 
-		"POST /invalidate_cache": (request, env, ctx) => {
+		"POST /invalidate_cache": (request, env, ctx) => verifyAuth(request, env).andThen(() => {
 			invalidateCacheKey(env, ctx, "meets");
 			invalidateCacheKey(env, ctx, "results");
 			invalidateCacheKey(env, ctx, "events");
@@ -207,7 +207,7 @@ const routes: Record<string, (request: Request, env: env, ctx: ExecutionContext)
 			invalidateCacheKey(env, ctx, "relay_legs");
 			invalidateCacheKey(env, ctx, "relays");
 			return okAsync(new Response("Cache invalidated"));
-		},
+		}),
 		"GET /meets": (req, env, ctx) =>
 		  cachedQuery(req, env, ctx, "meets", `
 			SELECT * FROM meets ORDER BY date DESC
