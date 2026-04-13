@@ -18,7 +18,7 @@
 		  "binding": "CACHE_VERSIONS",
 		  "id": "4e445dec48d348ffb009e2ffd2ea079b"
 		}
-	  ]
+	  ],
 	"observability": {
     "logs": {
       "enabled": true,
