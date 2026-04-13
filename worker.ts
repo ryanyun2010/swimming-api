@@ -175,6 +175,17 @@ export function cachedQuery(
   );
 }
 
+export function invalidateCacheKey(
+  env: env,
+  ctx: ExecutionContext,
+  key: string
+): ResultAsync<void, never> {
+  return okAsync(undefined).map(() => {
+    const newVersion = Date.now().toString();
+    ctx.waitUntil(env.CACHE_VERSIONS.put(key, newVersion));
+  });
+}
+
 /**** MAIN ROUTING ****/
 const routes: Record<string, (request: Request, env: env, ctx: ExecutionContext) => ResultAsync<Response, ErrorRes>> = {
 
@@ -201,7 +212,6 @@ const routes: Record<string, (request: Request, env: env, ctx: ExecutionContext)
 		  `),
 
 	"GET /records": (req, env, ctx) => cachedQuery(req,env,ctx,"records",
-  env.DB,
   `
     SELECT rp.*
     FROM record_progressions rp
@@ -221,7 +231,7 @@ const routes: Record<string, (request: Request, env: env, ctx: ExecutionContext)
 	`),
 			
 	
-	"POST /results": (request, env) => verifyAuth(request, env)
+	"POST /results": (request, env, ctx) => verifyAuth(request, env)
 	.andThen(() =>
 		getAndParseRequestJSON(
 			request,
@@ -361,10 +371,10 @@ WHERE time_ms = running_best
 			(e) => new Errors.InternalDatabase(`Results database insertion failed: ${e}`),
 		),
 	)
-	.map(() => new Response("Result successfully added", { status: 201 })),
+	.andThen(() => invalidateCacheKey(env, ctx, "results"))
+	.map(() => new Response("Result successfully added", { status: 201 })),	
 	
-	
-	"POST /relay_legs": (request, env) => verifyAuth(request, env)
+	"POST /relay_legs": (request, env, ctx) => verifyAuth(request, env)
 	.andThen(() =>
 		getAndParseRequestJSON(
 			request,
@@ -569,12 +579,13 @@ WHERE split_time = running_best
 			(e) => new Errors.InternalDatabase(`Relay Legs database insertion failed: ${e}`),
 		),
 	)
+	.andThen(() => invalidateCacheKey(env, ctx, "relay_legs"))
 	.map(() => new Response("Relay Leg successfully added", { status: 201 })),
 
 
 
 
-	"POST /relays": (request, env) => verifyAuth(request, env)
+	"POST /relays": (request, env, ctx) => verifyAuth(request, env)
 	.andThen(() => getAndParseRequestJSON(request, relaySchema,
 										  (errMsg) => new Errors.MalformedRequest("Given invalid relay data: " + errMsg)))
 	.andThen((json) =>
@@ -621,24 +632,28 @@ WHERE split_time = running_best
 					 { status: 201, headers: { "Content-Type": "application/json" } }
 				 );
 			 })
-	),
+	)
+	.map((q) => {invalidateCacheKey(env, ctx, "relays"); return q})
+	,
 
-	"POST /swimmers": (request, env) => verifyAuth(request, env)
+	"POST /swimmers": (request, env, ctx) => verifyAuth(request, env)
 	.andThen(() => getAndParseRequestJSON(request, swimmerSchema, (errMsg) => new Errors.MalformedRequest("Given invalid swimmer data: " + errMsg)))	
 	.andThen((json) => queryDB(env.DB, `
 		INSERT INTO swimmers (first_name, last_name, gender, graduating)
 		VALUES (?, ?, ?, ?)`,
 		(e) => new Errors.InternalDatabase(`Swimmers database insertion failed: ${e}`),
-		[json.first_name,json.last_name,json.gender,json.graduating])),
+		[json.first_name,json.last_name,json.gender,json.graduating]))
+	.map((q) => {invalidateCacheKey(env, ctx, "swimmers"); return q}),
 
 	
-	"POST /meets": (request, env) => verifyAuth(request, env)
+	"POST /meets": (request, env, ctx) => verifyAuth(request, env)
 	.andThen(() => getAndParseRequestJSON(request, meetSchema, (errMsg) => new Errors.MalformedRequest("Given invalid meet data: " + errMsg)))
 	.andThen((json) => queryDB(env.DB, `
 		INSERT INTO meets (name, location, date)
 		VALUES (?, ?, ?)`,
 		(e) => new Errors.InternalDatabase(`Meet database insertion failed: ${e}`), 
-		[json.name, json.location, json.date])),
+		[json.name, json.location, json.date]))
+	.map((q) => {invalidateCacheKey(env, ctx, "meets"); return q}),
 
 
 	"POST /verify": (request, env) => verifyAuth(request, env).map((email) =>
