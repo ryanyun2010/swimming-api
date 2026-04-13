@@ -199,7 +199,16 @@ export function invalidateCacheKey(
 const routes: Record<string, (request: Request, env: env, ctx: ExecutionContext) => ResultAsync<Response, ErrorRes>> = {
 
 
-
+		"POST /invalidate_cache": (request, env, ctx) => {
+			invalidateCacheKey(env, ctx, "meets");
+			invalidateCacheKey(env, ctx, "results");
+			invalidateCacheKey(env, ctx, "events");
+			invalidateCacheKey(env, ctx, "swimmers");
+			invalidateCacheKey(env, ctx, "records");
+			invalidateCacheKey(env, ctx, "relay_legs");
+			invalidateCacheKey(env, ctx, "relays");
+			return okAsync(new Response("Cache invalidated"));
+		},
 		"GET /meets": (req, env, ctx) =>
 		  cachedQuery(req, env, ctx, "meets", `
 			SELECT * FROM meets ORDER BY date DESC
