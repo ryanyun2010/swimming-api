@@ -831,19 +831,17 @@ function handler (request: Request, env: env, ctx: ExecutionContext): ResultAsyn
 export default {
 	async fetch(request: Request, env: env, ctx: ExecutionContext): Promise<Response> {
 		const withCors = (response: Response) => {
-			response.headers.set(
-				"Access-Control-Allow-Origin",
-				"https://nuevaswimming.pages.dev"
-			);
-			response.headers.set(
-				"Access-Control-Allow-Methods",
-				"GET, POST, OPTIONS"
-			);
-			response.headers.set(
-				"Access-Control-Allow-Headers",
-				"Content-Type, Authorization"
-			);
-			return response;
+			const newHeaders = new Headers(response.headers);
+
+			newHeaders.set("Access-Control-Allow-Origin", "https://nuevaswimming.pages.dev");
+				newHeaders.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+			newHeaders.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+
+			return new Response(response.body, {
+				status: response.status,
+				statusText: response.statusText,
+				headers: newHeaders,
+			});
 		};
 		return handler(request, env, ctx).match(
 			(response) => withCors(response),
