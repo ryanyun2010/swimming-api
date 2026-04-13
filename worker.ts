@@ -137,62 +137,61 @@ function getAndParseRequestJSON<T>(
 
 const CACHE_TTL = 60 * 30; // 30 min
 export function cachedQuery(
-  request: Request,
-  env: env,
-  ctx: ExecutionContext,
-  key: string,
-  query: string
+	request: Request,
+	env: env,
+	ctx: ExecutionContext,
+	key: string,
+	query: string
 ): ResultAsync<Response, ErrorRes> {
-  const cache = (caches as any).default as Cache;
+	const cache = (caches as any).default as Cache;
 
-  return ResultAsync.fromPromise(
-    env.CACHE_VERSIONS.get(key),
-    (e) => new Errors.InternalDatabase(String(e))
-  ).andThen((version) => {
-    if (!version) {
-      const newVersion = Date.now().toString();
-      ctx.waitUntil(env.CACHE_VERSIONS.put(key, newVersion));
-      return okAsync(newVersion);
-    }
-    return okAsync(version);
-  }).andThen((version) => {
-    const cacheKey = new Request(`${request.url}?v=${version}`, request);
+	return ResultAsync.fromPromise(
+		env.CACHE_VERSIONS.get(key),
+		(e) => new Errors.InternalDatabase(String(e))
+	).andThen((version) => {
+		if (!version) {
+			const newVersion = Date.now().toString();
+			ctx.waitUntil(env.CACHE_VERSIONS.put(key, newVersion));
+			return okAsync(newVersion);
+		}
+		return okAsync(version);
+	}).andThen((version) => {
+		const cacheKey = new Request(`${request.url}?v=${version}`, request);
 
-    return ResultAsync.fromPromise(
-      cache.match(cacheKey),
-      (e) => new Errors.InternalDatabase(String(e))
-    ).andThen((cached) => {
-      if (cached) {
-        return okAsync(cached);
-      }
+		return ResultAsync.fromPromise(
+			cache.match(cacheKey),
+			(e) => new Errors.InternalDatabase(String(e))
+		).andThen((cached) => {
+			if (cached) {
+				return okAsync(cached);
+			}
 
-      // 👇 IMPORTANT: stay in ResultAsync
-      return queryDB(env.DB, query).andThen((response) => {
-        const newResponse = new Response(response.body, {
-          status: response.status,
-          headers: {
-            ...Object.fromEntries(response.headers),
-            "Cache-Control": `public, max-age=${CACHE_TTL}`,
-          },
-        });
+			return queryDB(env.DB, query).andThen((response) => {
+				const newResponse = new Response(response.body, {
+					status: response.status,
+					headers: {
+						...Object.fromEntries(response.headers),
+						"Cache-Control": `public, max-age=${CACHE_TTL}`,
+					},
+				});
 
-        ctx.waitUntil(cache.put(cacheKey, newResponse.clone()));
+				ctx.waitUntil(cache.put(cacheKey, newResponse.clone()));
 
-        return okAsync(newResponse);
-      });
-    });
-  });
+				return okAsync(newResponse);
+			});
+		});
+	});
 }
 
 export function invalidateCacheKey(
-  env: env,
-  ctx: ExecutionContext,
-  key: string
+	env: env,
+	ctx: ExecutionContext,
+	key: string
 ): ResultAsync<void, never> {
-  return okAsync(undefined).map(() => {
-    const newVersion = Date.now().toString();
-    ctx.waitUntil(env.CACHE_VERSIONS.put(key, newVersion));
-  });
+	return okAsync(undefined).map(() => {
+		const newVersion = Date.now().toString();
+		ctx.waitUntil(env.CACHE_VERSIONS.put(key, newVersion));
+	});
 }
 
 /**** MAIN ROUTING ****/
@@ -679,123 +678,6 @@ WHERE split_time = running_best
 				JSON.stringify({ allowed: true, email }), { headers: { "Content-Type": "application/json" } }
 			)
 		),
-
-	// "POST /meets": (request, env) => verifyAuth(request, env)
-	// 	.andThen(() => getAndParseRequestJSON(request, meetSchema, (errMsg) => new Errors.MalformedRequest("Given invalid meet data: " + errMsg)))
-	// 	.andThen((json) => queryDB(env.DB, `
-	// 		INSERT INTO meets (name, location, date)
-	// 		VALUES (?, ?, ?)`,
-	// 		(e) => new Errors.InternalDatabase(`Meet database insertion failed: ${e}`), [json.name, json.location, json.date])
-	// 	), 
-
-
-	
-	// "GET /records": (_request, env) => queryDB(env.DB,`
-	// 		SELECT *			
-	// 		FROM records
-	// 		ORDER BY id DESC `
-	// 	).map((res) => returnJSONResponse(res)),
-
-	//
-	// 
-	// "POST /records": (request, env) => verifyAuth(request, env)
-	// 	.andThen(() => getAndParseRequestJSON(request, recordsSchema, (errMsg) => new Errors.MalformedRequest("Given invalid record data: " + errMsg)))
-	// 	.andThen(
-	// 		(json) => {
-	// 			const batches = [];
-	// 			const results = []
-	//
-	// 			for (let i = 0; i < json.length; i += 16) {
-	// 				batches.push(json.slice(i, i + 16));
-	// 			}
-	// 			for (let batch of batches) {
-	// 				const placeholders = batch.map(() => "(?, ?, ?, ?, ?, ?)").join(", ");
-	// 					const values = batch.flatMap((record) => [
-	// 						record.meet_id,
-	// 						record.swimmer_id,
-	// 						record.event,
-	// 						record.type,
-	// 						record.time,
-	// 						record.start
-	// 					]);
-	//
-	// 					results.push(queryDB(
-	// 						env.DB,
-	// 						`
-	// 						INSERT INTO records
-	// 						(meet_id, swimmer_id, event, type, time, start)
-	// 						VALUES ${placeholders}
-	// 						`,
-	// 						(e) =>
-	// 						new Errors.InternalDatabase(
-	// 							`Records database insertion failed: ${e}`
-	// 						),
-	// 						values
-	// 					));
-	// 			}
-	// 			return ResultAsync.combine(results).map(() => new Response("Records successfully added", { status: 201 }));
-	// 		}),
-	//
-	//
-	//
-	// "GET /swimmers": (_request, env) => queryDB(env.DB,`
-	// 		SELECT id, name, graduating_year
-	// 		FROM swimmers
-	// 		ORDER BY id ASC `
-	// 	).map((res) => returnJSONResponse(res)),	
-	//
-	//
-	//
-	// "POST /swimmers": (request, env) => verifyAuth(request, env).andThen(() => getAndParseRequestJSON(request, swimmerSchema, (errMsg) => new Errors.MalformedRequest("Given invalid swimmer data: " + errMsg)))
-	// 	.andThen(
-	// 		(json) => queryDB(env.DB,`
-	// 			INSERT INTO swimmers
-	// 			(name, graduating_year)
-	// 			VALUES (?, ?)`,
-	// 			(e) => new Errors.InternalDatabase(`Swimmers database insertion failed: ${e}`),
-	// 			[json.name, json.graduating_year])
-	// 		.map((_) => new Response("Swimmer added", { status: 201 }))
-	// 	),
-	//
-	//
-	//
-	// "GET /recent_meets": (_request, env) => queryDB(env.DB,`
-	// 			SELECT id, name, location, date
-	// 			FROM meets
-	// 			ORDER BY date DESC
-	// 			LIMIT 5 `
-	// 		).map((res) => returnJSONResponse(res)),
-	//
-	//
-	//
-	//
-	//
-	//
-	// "GET /relays": (_request, env) => queryDB(env.DB,`
-	// 		SELECT
-	// 		r.id,
-	// 		r.time,
-	// 		r.type AS relay_type,
-	// 		r.record_1_id,
-	// 		r.record_2_id,
-	// 		r.record_3_id,
-	// 		r.record_4_id
-	// 		FROM relays r
-	// 		ORDER BY r.id DESC `
-	// 	).map((res) => returnJSONResponse(res)),
-	//
-	//
-	//
-	//
-	// "POST /relays": (request, env) => verifyAuth(request, env).andThen(() => getAndParseRequestJSON(request, relaySchema, (errMsg) => new Errors.MalformedRequest("Given invalid relay data: " + errMsg)))
-	// 	.andThen(
-	// 	(json) => queryDB(env.DB,`
-	// 				INSERT INTO relays
-	// 				(time, type, record_1_id, record_2_id, record_3_id, record_4_id)
-	// 				VALUES (?, ?, ?, ?, ?, ?)`,
-	// 				(e) => new Errors.InternalDatabase(`Relays database insertion failed: ${e}`),
-	// 				[json.time, json.relay_type, json.record_1_id, json.record_2_id, json.record_3_id, json.record_4_id])
-	// 			.map((_) => new Response("Relay added", { status: 201 })))
 };
 
 function verifyAuth(request: Request, env: env): ResultAsync<string, ErrorRes>{
