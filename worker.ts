@@ -9,6 +9,7 @@ import {ErrorRes} from "./errors";
 interface env {
 	DB: D1Database;
 	GOOGLE_CLIENT_ID: string;
+	CACHE_VERSIONS: KVNamespace;
 }
 
 const googleTokenSchema = z.object({
@@ -127,39 +128,88 @@ function getAndParseRequestJSON<T>(
 	return getRequestJSON(request, errFunc).andThen(zodParseWith(schema, errFunc));
 }
 
+const CACHE_TTL = 60 * 30; // 30 min
+export function cachedQuery(
+  request: Request,
+  env: env,
+  ctx: ExecutionContext,
+  key: string,
+  query: string
+): ResultAsync<Response, ErrorRes> {
+  const cache = (caches as any).default as Cache;
+
+  return ResultAsync.fromPromise(
+    (async () => {
+      let version = await env.CACHE_VERSIONS.get(key);
+      if (!version) {
+        version = Date.now().toString();
+        ctx.waitUntil(env.CACHE_VERSIONS.put(key, version));
+      }
+
+      const cacheKey = new Request(`${request.url}?v=${version}`, request);
+
+      const cached = await cache.match(cacheKey);
+      if (cached) return cached;
+
+      const data = await queryDB(env.DB, query);
+
+      const response = new Response(JSON.stringify(data), {
+        headers: {
+          "Content-Type": "application/json",
+          "Cache-Control": `public, max-age=${CACHE_TTL}`,
+        },
+      });
+
+      ctx.waitUntil(cache.put(cacheKey, response.clone()));
+
+      return response;
+    })(),
+    (e) => (e instanceof Error ? new Errors.InternalDatabase(String(e)) : new Errors.InternalDatabase("Unknown error during cached query"))
+  );
+}
 
 /**** MAIN ROUTING ****/
-const routes: Record<string, (request: Request, env: env) => ResultAsync<Response, ErrorRes>> = {
+const routes: Record<string, (request: Request, env: env, ctx: ExecutionContext) => ResultAsync<Response, ErrorRes>> = {
 
 
 
+		"GET /meets": (req, env, ctx) =>
+		  cachedQuery(req, env, ctx, "meets", `
+			SELECT * FROM meets ORDER BY date DESC
+		  `),
 
-	"GET /meets": (_request, env) => queryDB(env.DB, `
-			SELECT * 
-			FROM meets
-			ORDER BY date DESC `
-		).map((res) => returnJSONResponse(res)),
+		"GET /results": (req, env, ctx) =>
+		  cachedQuery(req, env, ctx, "results", `
+			SELECT * FROM results
+		  `),
 
+		"GET /events": (req, env, ctx) =>
+		  cachedQuery(req, env, ctx, "events", `
+			SELECT * FROM events
+		  `),
 
-	"GET /results": (_request, env) => queryDB(env.DB,`
-		SELECT * FROM results
-	`).map((res) => returnJSONResponse(res)),
+		"GET /swimmers": (req, env, ctx) =>
+		  cachedQuery(req, env, ctx, "swimmers", `
+			SELECT * FROM swimmers
+		  `),
 
+		"GET /records": (req, env, ctx) =>
+		  cachedQuery(req, env, ctx, "records", `
+			SELECT rp.*
+			FROM record_progressions rp
+			JOIN meets m ON rp.meet_id = m.id
+			ORDER BY m.date ASC, rp.time_ms DESC, rp.id ASC
+		  `),
 
-	"GET /events": (_request, env) => queryDB(env.DB,`
-		SELECT * FROM events
-	`).map((res) => returnJSONResponse(res)),
+		"GET /relay_legs": (req, env, ctx) =>
+		  cachedQuery(req, env, ctx, "relay_legs", `
+			SELECT * FROM relay_legs
+		  `),
 
-	
-	"GET /swimmers": (_request, env) => queryDB(env.DB,`
-		SELECT * FROM swimmers
-	`).map((res) => returnJSONResponse(res)),
-
-
-	"GET /records": (_request, env) => queryDB(env.DB,`
-		SELECT * from record_progressions
-	`).map((res) => returnJSONResponse(res)),
-			
+		"GET /relays": (req, env, ctx) =>
+		  cachedQuery(req, env, ctx, "relays", `
+			SELECT * FROM relays
+		  `),
 
 	
 
@@ -316,7 +366,7 @@ function verifyAuth(request: Request, env: env): ResultAsync<string, ErrorRes>{
 }
 
 
-function handler (request: Request, env: env): ResultAsync<Response, ErrorRes> {
+function handler (request: Request, env: env, ctx: ExecutionContext): ResultAsync<Response, ErrorRes> {
 	let url;
 	try {
 		url = new URL(request.url);
@@ -331,13 +381,13 @@ function handler (request: Request, env: env): ResultAsync<Response, ErrorRes> {
 	const key = `${request.method} ${url.pathname}`;
 	const route = routes[key];
 	if (route != null) {
-		return route(request, env);
+		return route(request, env, ctx);
 	}
 	return errAsync(new Errors.NotFound(`Endpoint "${key}" not found`));
 } 
 
 export default {
-	async fetch(request: Request, env: env): Promise<Response> {
+	async fetch(request: Request, env: env, ctx: ExecutionContext): Promise<Response> {
 		const withCors = (response: Response) => {
 			response.headers.set(
 				"Access-Control-Allow-Origin",
@@ -353,7 +403,7 @@ export default {
 			);
 			return response;
 		};
-		return handler(request, env).match(
+		return handler(request, env, ctx).match(
 			(response) => withCors(response),
 			(error) => withCors(new Response(error.name + ": " +error.message, { status: error.status }))
 		);
